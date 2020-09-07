@@ -4,16 +4,16 @@ const dbPath = './db';
 const docTrailer = '-db.json';
 const lockedTrailer = '-db_locked.json';
 const stepsTrailer = '-db_steps.json';
-const maxStoredSteps = 1000;
 const defaultData = {
   version: 0,
   doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Empty document' }] }] },
 };
 
-class Database {
-  constructor(namespaceDir, roomName) {
+export default class Database {
+  constructor(namespaceDir, roomName, maxStoredSteps = 1000) {
     this.namespaceDir = namespaceDir;
     this.roomName = roomName;
+    this.maxStoredSteps = maxStoredSteps;
 
     // Create directory if it does not exist
     if (!fs.existsSync(dbPath + this.namespaceDir)) {
@@ -33,7 +33,7 @@ class Database {
     let limitedOldData = [];
     try {
       const oldData = JSON.parse(fs.readFileSync(this.makePath(stepsTrailer), 'utf8'));
-      limitedOldData = oldData.slice(Math.max(oldData.length - maxStoredSteps));
+      limitedOldData = oldData.slice(Math.max(oldData.length - this.maxStoredSteps));
     } catch (e) {
       limitedOldData = [];
     }
@@ -79,5 +79,3 @@ class Database {
     }
   }
 }
-
-export default Database;

@@ -1,92 +1,95 @@
-import { Step } from 'prosemirror-transform';
-import schema from './schema';
-import Database from './database';
+import Document from './document';
 
 // setup socket server
 const app = require('express')();
 const http = require('http').Server(app);
 const io = require('socket.io')(http);
 
-function collabServer({ port }) {
-  http.listen(port);
+export default class CollabServer {
+  constructor(options) {
+    this.options = options;
 
-  const namespaces = io.of(/^\/[a-zA-Z0-9_/-]+$/);
+    this.onConnectingCallback = () => {};
+    this.onConnectedCallback = () => {};
+    this.onUpdatingCallback = () => {};
+    this.onUpdatedCallback = () => {};
+  }
 
-  namespaces.on('connection', (socket) => {
-    const namespace = socket.nsp;
-    const namespaceDir = namespace.name;
+  connect() {
+    http.listen(this.options.port || 6000);
 
-    socket.on('join', async (room) => {
-      socket.join(room);
+    // const namespaces = io.of(/^\/[a-zA-Z0-9_/-]+$/);
+    const namespaces = io.of(this.options.namespaceFilter || /^\/[a-zA-Z0-9_/-]+$/);
 
-      const database = new Database(namespaceDir, room);
+    namespaces.on('connection', (socket) => {
+      const namespace = socket.nsp;
+      const namespaceDir = namespace.name;
 
-      socket.on('update', async ({ version, clientID, steps }) => {
-      // we need to check if there is another update processed
-      // so we store a "locked" state
-        const locked = database.getLocked();
+      socket.on('join', async (room) => {
+        this.onConnectingCallback({ namespaceDir, room });
 
-        if (locked) {
-        // we will do nothing and wait for another client update
-          return;
-        }
+        socket.join(room);
 
-        database.storeLocked(true);
-
-        const storedData = database.getDoc();
+        const document = new Document(namespaceDir, room);
 
         // version mismatch: the stored version is newer
         // so we send all steps of this version back to the user
-        if (storedData.version !== version) {
+        document.onVersionMismatch(({ version, steps }) => {
           namespace.in(room).emit('update', {
             version,
-            steps: database.getSteps(version),
+            steps,
           });
-          database.storeLocked(false);
-          return;
-        }
-
-        let doc = schema.nodeFromJSON(storedData.doc);
-
-        const newSteps = steps.map((step) => {
-          const newStep = Step.fromJSON(schema, step);
-          newStep.clientID = clientID;
-
-          // apply step to document
-          const result = newStep.apply(doc);
-          doc = result.doc;
-
-          return newStep;
         });
-
-        // calculating a new version number is easy
-        const newVersion = version + newSteps.length;
-
-        // store data
-        database.storeSteps({ version, steps: newSteps });
-        database.storeDoc({ version: newVersion, doc });
 
         // send update to everyone (me and others)
-        namespace.in(room).emit('update', {
-          version: newVersion,
-          steps: database.getSteps(version),
+        document.onNewVersion(({ version, steps }) => {
+          namespace.in(room).emit('update', {
+            version,
+            steps,
+          });
         });
 
-        database.storeLocked(false);
-      });
+        this.onConnectedCallback({ document });
 
-      // send latest document
-      namespace.in(room).emit('init', database.getDoc());
+        socket.on('update', async (data) => {
+          this.onUpdatingCallback({ document, data });
+          document.update(data);
+          this.onUpdatedCallback({ document, data });
+        });
 
-      // send client count
-      namespace.in(room).emit('getCount', namespace.adapter.rooms[room].length);
-      socket.on('disconnect', () => {
-        if (namespace.adapter.rooms[room]) {
-          namespace.in(room).emit('getCount', namespace.adapter.rooms[room].length);
-        }
+        // send latest document
+        namespace.in(room).emit('init', document.getDoc());
+
+        // send client count
+        namespace.in(room).emit('getCount', namespace.adapter.rooms[room].length);
+        socket.on('disconnect', () => {
+          if (namespace.adapter.rooms[room]) {
+            namespace.in(room).emit('getCount', namespace.adapter.rooms[room].length);
+          }
+        });
       });
     });
-  });
-}
 
-export default collabServer;
+    return this;
+  }
+
+  onConnecting(callback) {
+    this.onConnectingCallback = callback;
+    return this;
+  }
+
+  onConnected(callback) {
+    this.onConnectedCallback = callback;
+    return this;
+  }
+
+  onUpdating(callback) {
+    this.onUpdatingCallback = callback;
+    return this;
+  }
+
+  onUpdated(callback) {
+    this.onUpdatedCallback = callback;
+    return this;
+  }
+}
