@@ -3,12 +3,19 @@ import schema from './schema';
 import Database from './database';
 
 export default class Document {
-  constructor(namespaceDir, roomName) {
-    this.database = new Database(namespaceDir, roomName);
+  constructor(namespaceDir, roomName, maxStoredSteps = 1000) {
+    this.database = new Database(namespaceDir, roomName, maxStoredSteps);
+
+    this.onVersionMismatchCallback = () => {};
+    this.onNewVersionCallback = () => {};
   }
 
   getDoc() {
     return this.database.getDoc();
+  }
+
+  getStepsAfterVersion(version) {
+    return this.database.getSteps().filter((step) => step.version > version);
   }
 
   update({ version, clientID, steps }) {
@@ -16,53 +23,59 @@ export default class Document {
     // so we store a "locked" state
     const locked = this.database.getLocked();
 
-    if (locked) {
-    // we will do nothing and wait for another client update
-      return;
-    }
+    // If locked, we will do nothing and wait for another client update
+    if (!locked) {
+      this.database.storeLocked(true);
 
-    this.database.storeLocked(true);
+      const storedData = this.database.getDoc();
 
-    const storedData = this.database.getDoc();
+      if (storedData.version !== version) {
+        this.onVersionMismatchCallback({
+          version,
+          steps: this.getStepsAfterVersion(version),
+        });
+      } else {
+        // calculating a new version number is easy
+        const newVersion = version + steps.length;
 
-    // version mismatch: the stored version is newer
-    // so we send all steps of this version back to the user
-    if (storedData.version !== version) {
-      this.onVersionMismatch({
-        version,
-        steps: this.database.getSteps(version),
-      });
+        this.applyStepsToDocument({ version: newVersion, steps });
+
+        this.storeSteps({ version, steps, clientID });
+
+        this.onNewVersionCallback({
+          version: newVersion,
+          steps: this.getStepsAfterVersion(version),
+        });
+      }
+
       this.database.storeLocked(false);
-      return;
     }
+  }
 
+  applyStepsToDocument({ version, steps }) {
+    const storedData = this.database.getDoc();
     let doc = schema.nodeFromJSON(storedData.doc);
-
-    const newSteps = steps.map((step) => {
-      const newStep = Step.fromJSON(schema, step);
-      newStep.clientID = clientID;
-
-      // apply step to document
-      const result = newStep.apply(doc);
+    // Apply steps to document
+    steps.forEach((step) => {
+      const result = Step.fromJSON(schema, step).apply(doc);
       doc = result.doc;
-
-      return newStep;
     });
 
-    // calculating a new version number is easy
-    const newVersion = version + newSteps.length;
+    // Store updated document
+    this.database.storeDoc({ version, doc });
+  }
 
-    // store data
-    this.database.storeSteps({ version, steps: newSteps });
-    this.database.storeDoc({ version: newVersion, doc });
+  storeSteps({ version, steps, clientID }) {
+    // Format new steps for storage
+    const newSteps = steps
+      .map((step, index) => ({
+        step: JSON.parse(JSON.stringify(step)),
+        version: version + index + 1,
+        clientID,
+      }));
 
-    // send update to everyone (me and others)
-    this.onNewVersionCallback({
-      version: newVersion,
-      steps: this.database.getSteps(version),
-    });
-
-    this.database.storeLocked(false);
+    // Store new steps
+    this.database.storeSteps(newSteps);
   }
 
   onVersionMismatch(callback) {

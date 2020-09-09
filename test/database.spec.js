@@ -8,25 +8,21 @@ describe('Database', () => {
   let fsExistsSyncStub;
   let fsMkdirSyncSpy;
 
+  beforeEach(() => {
+    fsMkdirSyncSpy = sinon.spy(fs, 'mkdirSync');
+    fsExistsSyncStub = sinon.stub(fs, 'existsSync');
+    fsExistsSyncStub.onFirstCall().returns(false).returns(true);
+
+    database = new Database('/Namespace', 'Room', 2);
+  });
+
   afterEach(() => {
     fsMkdirSyncSpy.restore();
+    fsExistsSyncStub.restore();
     fs.rmdirSync('db', { recursive: true });
   });
 
-  describe('# When creating database', () => {
-    beforeEach(() => {
-      fsMkdirSyncSpy = sinon.spy(fs, 'mkdirSync');
-      fsExistsSyncStub = sinon.stub(fs, 'existsSync');
-      fsExistsSyncStub.onFirstCall().returns(false).returns(true);
-
-      database = new Database('/Namespace', 'Room');
-    });
-
-    afterEach(() => {
-      fsMkdirSyncSpy.restore();
-      fsExistsSyncStub.restore();
-    });
-
+  describe('# When created', () => {
     it('should have namespaceDir', () => {
       expect(database).to.have.property('namespaceDir');
     });
@@ -59,7 +55,6 @@ describe('Database', () => {
 
   describe('# storeDoc', () => {
     it('should store data in doc', () => {
-      database = new Database('/Namespace', 'Room');
       const fsWriteFileSyncSpy = sinon.spy(fs, 'writeFileSync');
 
       const someData = {
@@ -68,35 +63,259 @@ describe('Database', () => {
       };
       database.storeDoc(someData);
 
-      expect(fsWriteFileSyncSpy.calledOnceWith('./db/Namespace/Room-db.json', JSON.stringify(someData, null, 2))).to.be.true;
+      expect(fsWriteFileSyncSpy.calledOnceWithExactly('./db/Namespace/Room-db.json', JSON.stringify(someData, null, 2))).to.be.true;
 
       fsWriteFileSyncSpy.restore();
     });
   });
 
   describe('# storeSteps', () => {
-    it('should store steps in file');
-    it('should work if file does not exist');
-    it('should slice old data if number of stored steps exceeds maxStoredSteps');
-    it('should increment version at each step');
+    it('should store steps in file', () => {
+      const fsWriteFileSyncSpy = sinon.spy(fs, 'writeFileSync');
+
+      const steps = [
+        {
+          step: 1,
+          data: {
+            text: 'Step 1',
+          },
+        },
+        {
+          step: 2,
+          data: {
+            text: 'Step 2',
+          },
+        },
+        {
+          step: 3,
+          data: {
+            text: 'Step 3',
+          },
+        },
+      ];
+      database.storeSteps(steps);
+
+      expect(fsWriteFileSyncSpy.calledOnceWithExactly('./db/Namespace/Room-db_steps.json', JSON.stringify(steps))).to.be.true;
+
+      fsWriteFileSyncSpy.restore();
+    });
+
+    it('should slice old data if number of stored steps exceeds maxStoredSteps', () => {
+      const fsWriteFileSyncSpy = sinon.spy(fs, 'writeFileSync');
+      const fsReadFileSyncStub = sinon.stub(fs, 'readFileSync');
+
+      const steps = [
+        {
+          step: 1,
+          data: {
+            text: 'Step 1',
+          },
+        },
+        {
+          step: 2,
+          data: {
+            text: 'Step 2',
+          },
+        },
+        {
+          step: 3,
+          data: {
+            text: 'Step 3',
+          },
+        },
+      ];
+      fsReadFileSyncStub.returns(JSON.stringify(steps));
+
+      database.storeSteps(steps);
+
+      const concatSteps = [
+        {
+          step: 2,
+          data: {
+            text: 'Step 2',
+          },
+        },
+        {
+          step: 3,
+          data: {
+            text: 'Step 3',
+          },
+        },
+        {
+          step: 1,
+          data: {
+            text: 'Step 1',
+          },
+        },
+        {
+          step: 2,
+          data: {
+            text: 'Step 2',
+          },
+        },
+        {
+          step: 3,
+          data: {
+            text: 'Step 3',
+          },
+        },
+      ];
+
+      expect(fsWriteFileSyncSpy.calledOnceWithExactly('./db/Namespace/Room-db_steps.json', JSON.stringify(concatSteps))).to.be.true;
+
+      fsWriteFileSyncSpy.restore();
+      fsReadFileSyncStub.restore();
+    });
   });
 
   describe('# storeSteps', () => {
-    it('should store lock');
+    it('should store lock', () => {
+      const fsWriteFileSyncSpy = sinon.spy(fs, 'writeFileSync');
+
+      database.storeLocked(true);
+      database.storeLocked(false);
+
+      expect(fsWriteFileSyncSpy.firstCall.calledWith('./db/Namespace/Room-db_locked.json', true.toString())).to.be.true;
+      expect(fsWriteFileSyncSpy.secondCall.calledWith('./db/Namespace/Room-db_locked.json', false.toString())).to.be.true;
+
+      fsWriteFileSyncSpy.restore();
+    });
   });
 
   describe('# getDoc', () => {
-    it('should retrieve document data from file');
-    it('should return default data if file does not exist');
-  });
+    it('should retrieve document data from file', () => {
+      fs.writeFileSync('./db/Namespace/Room-db.json', JSON.stringify(
+        {
+          version: 0,
+          doc: {
+            type: 'doc',
+            content: [
+              {
+                type: 'paragraph',
+                content: [
+                  {
+                    type: 'text',
+                    text: 'This is a test',
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ));
 
-  describe('# getLocked', () => {
-    it('should retrieve lock status from file');
-    it('should return false if file does not exist');
+      const doc = database.getDoc();
+
+      expect(doc).to.be.eql({
+        version: 0,
+        doc: {
+          type: 'doc',
+          content: [
+            {
+              type: 'paragraph',
+              content: [
+                {
+                  type: 'text',
+                  text: 'This is a test',
+                },
+              ],
+            },
+          ],
+        },
+      });
+    });
+
+    it('should return default data if file does not exist', () => {
+      const doc = database.getDoc();
+
+      expect(doc).to.be.eql({
+        version: 0,
+        doc: {
+          type: 'doc',
+          content: [
+            {
+              type: 'paragraph',
+              content: [
+                {
+                  type: 'text',
+                  text: '',
+                },
+              ],
+            },
+          ],
+        },
+      });
+    });
   });
 
   describe('# getSteps', () => {
-    it('should retrieve steps from given version from file');
-    it('should return empty array if file does not exist');
+    it('should retrieve steps from given version from file', () => {
+      fs.writeFileSync('./db/Namespace/Room-db_steps.json', JSON.stringify([
+        {
+          step: 1,
+          data: {
+            text: 'Step 1',
+          },
+        },
+        {
+          step: 2,
+          data: {
+            text: 'Step 2',
+          },
+        },
+        {
+          step: 3,
+          data: {
+            text: 'Step 3',
+          },
+        },
+      ]));
+
+      const steps = database.getSteps();
+
+      expect(steps).to.be.eql([
+        {
+          step: 1,
+          data: {
+            text: 'Step 1',
+          },
+        },
+        {
+          step: 2,
+          data: {
+            text: 'Step 2',
+          },
+        },
+        {
+          step: 3,
+          data: {
+            text: 'Step 3',
+          },
+        },
+      ]);
+    });
+
+    it('should return empty array if file does not exist', () => {
+      const steps = database.getSteps();
+      expect(steps).to.be.eql([]);
+    });
+  });
+
+  describe('# getLocked', () => {
+    it('should retrieve lock status from file', () => {
+      fs.writeFileSync('./db/Namespace/Room-db_locked.json', true.toString());
+
+      const locked = database.getLocked();
+
+      expect(locked).to.be.true;
+    });
+
+    it('should return false if file does not exist', () => {
+      const locked = database.getLocked();
+
+      expect(locked).to.be.false;
+    });
   });
 });

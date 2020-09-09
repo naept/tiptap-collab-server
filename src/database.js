@@ -6,11 +6,11 @@ const lockedTrailer = '-db_locked.json';
 const stepsTrailer = '-db_steps.json';
 const defaultData = {
   version: 0,
-  doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Empty document' }] }] },
+  doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '' }] }] },
 };
 
 export default class Database {
-  constructor(namespaceDir, roomName, maxStoredSteps = 1000) {
+  constructor(namespaceDir, roomName, maxStoredSteps) {
     this.namespaceDir = namespaceDir;
     this.roomName = roomName;
     this.maxStoredSteps = maxStoredSteps;
@@ -29,7 +29,7 @@ export default class Database {
     fs.writeFileSync(this.makePath(docTrailer), JSON.stringify(data, null, 2));
   }
 
-  storeSteps({ steps, version }) {
+  storeSteps(steps) {
     let limitedOldData = [];
     try {
       const oldData = JSON.parse(fs.readFileSync(this.makePath(stepsTrailer), 'utf8'));
@@ -40,11 +40,7 @@ export default class Database {
 
     const newData = [
       ...limitedOldData,
-      ...steps.map((step, index) => ({
-        step: JSON.parse(JSON.stringify(step)),
-        version: version + index + 1,
-        clientID: step.clientID,
-      })),
+      ...steps,
     ];
 
     fs.writeFileSync(this.makePath(stepsTrailer), JSON.stringify(newData));
@@ -62,20 +58,19 @@ export default class Database {
     }
   }
 
+  getSteps() {
+    try {
+      return JSON.parse(fs.readFileSync(this.makePath(stepsTrailer), 'utf8'));
+    } catch (e) {
+      return [];
+    }
+  }
+
   getLocked() {
     try {
       return JSON.parse(fs.readFileSync(this.makePath(lockedTrailer), 'utf8'));
     } catch (e) {
       return false;
-    }
-  }
-
-  getSteps(version) {
-    try {
-      const steps = JSON.parse(fs.readFileSync(this.makePath(stepsTrailer), 'utf8'));
-      return steps.filter((step) => step.version > version);
-    } catch (e) {
-      return [];
     }
   }
 }
