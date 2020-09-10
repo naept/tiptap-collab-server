@@ -49,8 +49,12 @@
     "socket.io": "^2.3.0"
   },
   "nyc": {
+    "all": true,
+    "include": ["src/**/*.js"],
+    "extension": [".js"],
     "reporter": [
       "lcov",
+      "html",
       "text"
     ]
   }

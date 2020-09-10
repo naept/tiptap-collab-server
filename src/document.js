@@ -4,6 +4,7 @@ import Database from './database';
 
 export default class Document {
   constructor(namespaceDir, roomName, maxStoredSteps = 1000) {
+    this.id = `${namespaceDir}/${roomName}`;
     this.database = new Database(namespaceDir, roomName, maxStoredSteps);
 
     this.onVersionMismatchCallback = () => {};
