@@ -27,7 +27,11 @@
     "url": "https://github.com/naept/tiptap-collab-server/issues"
   },
   "homepage": "https://github.com/naept/tiptap-collab-server#readme",
-  "author": "Julien Aupart",
+	"author": {
+		"name": "Julien Aupart",
+		"email": "julien.aupart@naept.com",
+		"url": "https://www.naept.com"
+	},
   "devDependencies": {
     "@babel/cli": "^7.11.6",
     "@babel/plugin-transform-runtime": "^7.11.5",

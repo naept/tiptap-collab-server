@@ -1,6 +1,5 @@
 import SocketIO from 'socket.io';
 import Document from './document';
-// import Room from './room';
 
 const app = require('express')();
 const http = require('http').Server(app);
@@ -26,7 +25,7 @@ export default class CollabServer {
       const namespace = socket.nsp;
 
       socket.on('join', async (room) => {
-        // console.log('server on join', room);
+        console.log('server on join', room);
 
         // this.onConnectingCallback({ namespace, room });
 
@@ -37,6 +36,7 @@ export default class CollabServer {
         // Handle version mismatch:
         // we send all steps of this version back to the user
         document.onVersionMismatch(({ version, steps }) => {
+          console.log('document onVersionMismatch');
           namespace.in(room).emit('update', {
             version,
             steps,
@@ -46,6 +46,7 @@ export default class CollabServer {
         // Handle new document version
         // send update to everyone (me and others)
         document.onNewVersion(({ version, steps }) => {
+          console.log('document onNewVersion');
           namespace.in(room).emit('update', {
             version,
             steps,
@@ -54,15 +55,27 @@ export default class CollabServer {
 
         // Handle update
         socket.on('update', async (data) => {
-          // console.log('server on update');
+          console.log('server on update', data);
           // this.onUpdatingCallback({ document, data });
           document.update(data);
           // this.onUpdatedCallback({ document, data });
         });
 
+        // Handle update
+        socket.on('updateSelection', async (data) => {
+          console.log('server on updateSelection', data);
+          if (document.updateSelection(data, socket.id)) {
+            console.log('server emit getSelections', document.getSelections());
+            socket.to(room).emit('getSelections', document.getSelections());
+          }
+        });
+
         // Handle disconnect
         socket.on('disconnect', () => {
-          // console.log('server on disconnect', namespace.adapter.rooms);
+          console.log('server on disconnect');
+          document.removeSelection(socket.id);
+          console.log('server emit getSelections', document.getSelections());
+          namespace.in(room).emit('getSelections', document.getSelections());
           if (namespace.adapter.rooms[room]) {
             namespace.in(room).emit('getCount', namespace.adapter.rooms[room].length);
           } else {
@@ -73,11 +86,15 @@ export default class CollabServer {
         });
 
         // send latest document
-        // console.log('server emit init');
-        namespace.in(room).emit('init', document.getDoc());
+        console.log('server emit init');
+        socket.emit('init', document.getDoc());
+
+        // send selections
+        console.log('server emit getSelections', document.getSelections());
+        namespace.in(room).emit('getSelections', document.getSelections());
 
         // send client count
-        // console.log('server emit getCount', namespace.adapter.rooms[room].length);
+        console.log('server emit getCount', namespace.adapter.rooms[room].length);
         namespace.in(room).emit('getCount', namespace.adapter.rooms[room].length);
 
         // console.log('server on connected', namespace.adapter.rooms);
@@ -90,6 +107,7 @@ export default class CollabServer {
 
   findOrCreateDocument(namespace, room) {
     let document = this.findDocument(namespace, room);
+    console.log('document found', document);
     if (!document) {
       document = new Document(namespace.name, room, this.options.maxStoredSteps);
       this.documents.push(document);

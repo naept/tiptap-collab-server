@@ -5,6 +5,7 @@ import Database from './database';
 export default class Document {
   constructor(namespaceDir, roomName, maxStoredSteps = 1000) {
     this.id = `${namespaceDir}/${roomName}`;
+    this.selections = {};
     this.database = new Database(namespaceDir, roomName, maxStoredSteps);
 
     this.onVersionMismatchCallback = () => {};
@@ -87,5 +88,28 @@ export default class Document {
   onNewVersion(callback) {
     this.onNewVersionCallback = callback;
     return this;
+  }
+
+  updateSelection({ clientID, selection }, socketID) {
+    if (!this.selections[socketID]
+      || JSON.stringify(this.selections[socketID].selection) !== JSON.stringify(selection)) {
+      this.selections = {
+        ...this.selections,
+        [socketID]: {
+          clientID,
+          selection,
+        },
+      };
+      return true;
+    }
+    return false;
+  }
+
+  removeSelection(socketID) {
+    delete this.selections[socketID];
+  }
+
+  getSelections() {
+    return Object.values(this.selections);
   }
 }

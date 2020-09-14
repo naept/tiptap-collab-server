@@ -6,7 +6,8 @@ const lockedTrailer = '-db_locked.json';
 const stepsTrailer = '-db_steps.json';
 const defaultData = {
   version: 0,
-  doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '' }] }] },
+  // doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '' }] }] },
+  doc: { type: 'doc', content: [{ type: 'paragraph' }] },
 };
 
 export default class Database {
