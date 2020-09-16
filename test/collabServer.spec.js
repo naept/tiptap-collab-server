@@ -174,6 +174,38 @@ describe('CollabServer', () => {
         clientID: 'client-1',
       });
     });
+
+    it('should emit initFailed if connection guard rejects', (done) => {
+      collabServer.beforeConnection((_param, _resolve, reject) => { reject(); });
+
+      socket.on('initFailed', () => {
+        collabServer.beforeConnection((_param, resolve) => { resolve(); });
+        done();
+      });
+
+      socket.emit('join', {
+        room: 'some-room',
+        clientID: 'client-1',
+      });
+    });
+
+    // it('should call onConnecting callback', (done) => {
+    //   const callback = (data) => {
+    //     expect(data).to.have.property('socket');
+    //     expect(data).to.have.property('room');
+    //     expect(data).to.have.property('clientID');
+    //     expect(data).to.have.property('options');
+    //     collabServer.onConnecting(() => {});
+    //     done();
+    //   };
+
+    //   collabServer.onConnecting(callback);
+
+    //   socket.emit('join', {
+    //     room: 'some-room',
+    //     clientID: 'client-1',
+    //   });
+    // });
   });
 
   describe('# On update message', () => {
