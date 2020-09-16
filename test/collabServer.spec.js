@@ -1,8 +1,26 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
+import fs from 'fs';
 import io from 'socket.io-client';
 import CollabServer from '../src/collabServer';
 
+const storedData = {
+  version: 20,
+  doc: {
+    type: 'doc',
+    content: [
+      {
+        type: 'paragraph',
+        content: [
+          {
+            type: 'text',
+            text: 'Tes',
+          },
+        ],
+      },
+    ],
+  },
+};
 const updateData = {
   version: 20,
   clientID: 820185065,
@@ -38,6 +56,7 @@ describe('CollabServer', () => {
 
   afterEach((done) => {
     socket && socket.connected && socket.disconnect();
+    fs.rmdirSync('db', { recursive: true });
     done();
   });
 
@@ -53,32 +72,44 @@ describe('CollabServer', () => {
         done();
       });
 
-      socket.emit('join', 'some-room');
+      socket.emit('join', {
+        room: 'some-room',
+        clientID: 'client-1',
+      });
     });
 
-    it('should emit count of clients after client joins', (done) => {
+    it('should emit clients IDs after client joins', (done) => {
       const socket2 = io('http://localhost:6000/some-namespace');
       const socket3 = io('http://localhost:6000/some-namespace');
       const socket4 = io('http://localhost:6000/some-namespace');
       const socket5 = io('http://localhost:6000/some-other-namespace');
 
-      let count = 0;
-      socket.on('getCount', (data) => {
-        count += 1;
-        switch (count) {
+      let step = 0;
+      socket.on('getClients', (data) => {
+        step += 1;
+        switch (step) {
           case 1:
-            expect(data).to.equal(1);
-            socket2.emit('join', 'some-room');
+            expect(data).to.eql(['client-1']);
+            socket2.emit('join', {
+              room: 'some-room',
+              clientID: 'client-2',
+            });
             break;
 
           case 2:
-            expect(data).to.equal(2);
-            socket3.emit('join', 'some-room');
+            expect(data).to.eql(['client-1', 'client-2']);
+            socket3.emit('join', {
+              room: 'some-room',
+              clientID: 'client-3',
+            });
             break;
 
           case 3:
-            expect(data).to.equal(3);
-            socket4.emit('join', 'some-other-room');
+            expect(data).to.eql(['client-1', 'client-2', 'client-3']);
+            socket4.emit('join', {
+              room: 'some-other-room',
+              clientID: 'client-4',
+            });
             break;
 
           default:
@@ -86,13 +117,16 @@ describe('CollabServer', () => {
         }
       });
 
-      socket4.on('getCount', (data) => {
-        expect(data).to.equal(1);
-        socket5.emit('join', 'some-other-room');
+      socket4.on('getClients', (data) => {
+        expect(data).to.eql(['client-4']);
+        socket5.emit('join', {
+          room: 'some-other-room',
+          clientID: 'client-5',
+        });
       });
 
-      socket5.on('getCount', (data) => {
-        expect(data).to.equal(1);
+      socket5.on('getClients', (data) => {
+        expect(data).to.eql(['client-5']);
 
         socket2.disconnect();
         socket3.disconnect();
@@ -102,41 +136,31 @@ describe('CollabServer', () => {
         done();
       });
 
-      socket.emit('join', 'some-room');
+      socket.emit('join', {
+        room: 'some-room',
+        clientID: 'client-1',
+      });
     });
-  });
 
-  describe('# Client disconnection', () => {
-    it('should emit count of clients on client disconnect', (done) => {
+    it('should emit getSelection after client joins', (done) => {
       const socket2 = io('http://localhost:6000/some-namespace');
-      const socket3 = io('http://localhost:6000/some-namespace');
 
-      let count = 0;
-      socket.on('getCount', (data) => {
-        count += 1;
-        switch (count) {
+      let step = 0;
+      socket.on('getSelections', (data) => {
+        step += 1;
+        switch (step) {
           case 1:
-            expect(data).to.equal(1);
-            socket2.emit('join', 'some-room');
+            expect(data).to.eql([]);
+            socket2.emit('join', {
+              room: 'some-room',
+              clientID: 'client-2',
+            });
             break;
 
           case 2:
-            expect(data).to.equal(2);
-            socket3.emit('join', 'some-room');
-            break;
-
-          case 3:
-            expect(data).to.equal(3);
-            socket3.disconnect();
-            break;
-
-          case 4:
-            expect(data).to.equal(2);
+            expect(data).to.eql([]);
+            socket.disconnect();
             socket2.disconnect();
-            break;
-
-          case 5:
-            expect(data).to.equal(1);
             done();
             break;
 
@@ -145,22 +169,273 @@ describe('CollabServer', () => {
         }
       });
 
-      socket.emit('join', 'some-room');
+      socket.emit('join', {
+        room: 'some-room',
+        clientID: 'client-1',
+      });
     });
   });
 
-  // describe('# On update message', () => {
-  //   it('should call onUpdatingCallback', () => {
-  //     const onUpdatingCallbackSpy = sinon.spy(collabServer, 'onUpdatingCallback');
+  describe('# On update message', () => {
+    it('should emit new version of steps if version matches', (done) => {
+      const document = collabServer.findOrCreateDocument('/some-namespace', 'some-room');
+      const databaseGetDocStub = sinon.stub(document.database, 'getDoc');
+      databaseGetDocStub.returns(storedData);
 
-  //     socket.emit('join', 'some-room');
-  //     socket.emit('update', updateData);
+      socket.on('update', (data) => {
+        expect(data).to.eql({
+          version: updateData.version + 1,
+          steps: updateData.steps.map((step, index) => ({
+            step: JSON.parse(JSON.stringify(step)),
+            version: updateData.version + index + 1,
+            clientID: updateData.clientID,
+          })),
+        });
 
-  //     expect(onUpdatingCallbackSpy.calledOnce).to.be.true;
+        databaseGetDocStub.restore();
+        done();
+      });
 
-  //     onUpdatingCallbackSpy.restore();
-  //   });
-  // });
+      socket.emit('join', {
+        room: 'some-room',
+        clientID: 'client-1',
+      });
+      socket.emit('update', updateData);
+    });
+
+    it('should emit stored version of steps if version does not match', (done) => {
+      socket.on('update', (data) => {
+        expect(data).to.eql({
+          version: updateData.version,
+          steps: [],
+        });
+
+        done();
+      });
+
+      socket.emit('join', {
+        room: 'some-room',
+        clientID: 'client-1',
+      });
+      socket.emit('update', updateData);
+    });
+
+    // it('should call onUpdatingCallback', () => {
+    //   const onUpdatingCallbackSpy = sinon.spy(collabServer, 'onUpdatingCallback');
+
+    //   socket.emit('join', 'some-room');
+    //   socket.emit('update', updateData);
+
+    //   expect(onUpdatingCallbackSpy.calledOnce).to.be.true;
+
+    //   onUpdatingCallbackSpy.restore();
+    // });
+  });
+
+  describe('# On updateSelection message', () => {
+    let socket2;
+
+    beforeEach((done) => {
+      socket.emit('join', {
+        room: 'some-room',
+        clientID: 'client-1',
+      });
+
+      socket.on('init', () => {
+        socket2 = io('http://localhost:6000/some-namespace');
+        socket2.emit('join', {
+          room: 'some-room',
+          clientID: 'client-2',
+        });
+        socket2.on('init', () => {
+          done();
+        });
+      });
+    });
+
+    afterEach((done) => {
+      socket.disconnect();
+      socket2.disconnect();
+      done();
+    });
+
+    it('should emit getSelection with updated selection to every other socket of the room if modified', (done) => {
+      let step = 0;
+      socket2.on('getSelections', (data) => {
+        step += 1;
+        switch (step) {
+          case 1: // init
+            break;
+
+          case 2:
+            expect(data).to.eql([
+              {
+                clientID: 'client-1',
+                selection: {
+                  from: 1,
+                  to: 1,
+                },
+              },
+            ]);
+            done();
+            break;
+
+          default:
+            break;
+        }
+      });
+
+      socket.emit('updateSelection', {
+        clientID: 'client-1',
+        selection: {
+          from: 1,
+          to: 1,
+        },
+      });
+    });
+
+    it('should not emit getSelection with updated selection to every other socket of the room if not modified', (done) => {
+      let step = 0;
+      socket2.on('getSelections', (data) => {
+        step += 1;
+        switch (step) {
+          case 1: // init
+            break;
+
+          case 2:
+            socket.emit('updateSelection', {
+              clientID: 'client-1',
+              selection: {
+                from: 1,
+                to: 1,
+              },
+            });
+            setTimeout(() => {}, 500);
+            socket.emit('updateSelection', {
+              clientID: 'client-1',
+              selection: {
+                from: 2,
+                to: 3,
+              },
+            });
+            break;
+
+          case 3:
+            expect(data).to.eql([
+              {
+                clientID: 'client-1',
+                selection: {
+                  from: 2,
+                  to: 3,
+                },
+              },
+            ]);
+            done();
+            break;
+
+          default:
+            break;
+        }
+      });
+
+      socket.emit('updateSelection', {
+        clientID: 'client-1',
+        selection: {
+          from: 1,
+          to: 1,
+        },
+      });
+    });
+  });
+
+  describe('# on client disconnection', () => {
+    it('should emit getSelections', (done) => {
+      const socket2 = io('http://localhost:6000/some-namespace');
+
+      let step = 0;
+      socket.on('getSelections', (data) => {
+        step += 1;
+        switch (step) {
+          case 1:
+            expect(data).to.eql([]);
+            socket2.emit('join', {
+              room: 'some-room',
+              clientID: 'client-2',
+            });
+            break;
+
+          case 2:
+            expect(data).to.eql([]);
+            socket2.disconnect();
+            break;
+
+          case 3:
+            expect(data).to.eql([]);
+            socket.disconnect();
+            done();
+            break;
+
+          default:
+            break;
+        }
+      });
+
+      socket.emit('join', {
+        room: 'some-room',
+        clientID: 'client-1',
+      });
+    });
+
+    it('should emit getClients', (done) => {
+      const socket2 = io('http://localhost:6000/some-namespace');
+      const socket3 = io('http://localhost:6000/some-namespace');
+
+      let step = 0;
+      socket.on('getClients', (data) => {
+        step += 1;
+        switch (step) {
+          case 1:
+            expect(data).to.eql(['client-1']);
+            socket2.emit('join', {
+              room: 'some-room',
+              clientID: 'client-2',
+            });
+            break;
+
+          case 2:
+            expect(data).to.eql(['client-1', 'client-2']);
+            socket3.emit('join', {
+              room: 'some-room',
+              clientID: 'client-3',
+            });
+            break;
+
+          case 3:
+            expect(data).to.eql(['client-1', 'client-2', 'client-3']);
+            socket2.disconnect();
+            break;
+
+          case 4:
+            expect(data).to.eql(['client-1', 'client-3']);
+            socket3.disconnect();
+            break;
+
+          case 5:
+            expect(data).to.eql(['client-1']);
+            done();
+            break;
+
+          default:
+            break;
+        }
+      });
+
+      socket.emit('join', {
+        room: 'some-room',
+        clientID: 'client-1',
+      });
+    });
+  });
 
   after(() => {
     collabServer.close();

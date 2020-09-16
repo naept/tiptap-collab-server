@@ -237,12 +237,6 @@ describe('Database', () => {
           content: [
             {
               type: 'paragraph',
-              content: [
-                {
-                  type: 'text',
-                  text: '',
-                },
-              ],
             },
           ],
         },

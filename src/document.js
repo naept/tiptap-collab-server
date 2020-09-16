@@ -6,6 +6,7 @@ export default class Document {
   constructor(namespaceDir, roomName, maxStoredSteps = 1000) {
     this.id = `${namespaceDir}/${roomName}`;
     this.selections = {};
+    this.clients = {};
     this.database = new Database(namespaceDir, roomName, maxStoredSteps);
 
     this.onVersionMismatchCallback = () => {};
@@ -111,5 +112,20 @@ export default class Document {
 
   getSelections() {
     return Object.values(this.selections);
+  }
+
+  addClient(clientID, socketID) {
+    this.clients = {
+      ...this.clients,
+      [socketID]: clientID,
+    };
+  }
+
+  removeClient(socketID) {
+    delete this.clients[socketID];
+  }
+
+  getClients() {
+    return Object.values(this.clients);
   }
 }

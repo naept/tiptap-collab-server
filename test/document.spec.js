@@ -53,6 +53,19 @@ describe('Document', () => {
   });
 
   describe('# When created', () => {
+    it('should have an id', () => {
+      expect(document).to.have.property('id');
+      expect(document.id).to.equal('/Namespace/Room');
+    });
+
+    it('should have a list of selections', () => {
+      expect(document).to.have.property('selections');
+    });
+
+    it('should have a list of clients', () => {
+      expect(document).to.have.property('clients');
+    });
+
     it('should create database', () => {
       expect(document).to.have.property('database');
       expect(document.database).to.be.instanceOf(Database);
@@ -304,6 +317,215 @@ describe('Document', () => {
       document.onNewVersion(callback);
 
       expect(document.onNewVersionCallback()).to.equal('some callback function result');
+    });
+  });
+
+  describe('# updateSelection', () => {
+    it('should add selection of client to list and return true if not in the list', () => {
+      const updateSelectionSpy = sinon.spy(document, 'updateSelection');
+      document.selections = {
+        'socket-A': {
+          clientID: 'client-A',
+          selection: {
+            from: 5,
+            to: 5,
+          },
+        },
+      };
+
+      document.updateSelection({
+        clientID: 'client-1',
+        selection: {
+          from: 5,
+          to: 5,
+        },
+      }, 'socket-1');
+
+      expect(document.selections['socket-1']).to.eql({
+        clientID: 'client-1',
+        selection: {
+          from: 5,
+          to: 5,
+        },
+      });
+      expect(updateSelectionSpy.returned(true)).to.be.true;
+    });
+
+    it('should update selection of client and return true if different', () => {
+      const updateSelectionSpy = sinon.spy(document, 'updateSelection');
+      document.selections = {
+        'socket-1': {
+          clientID: 'client-1',
+          selection: {
+            from: 1,
+            to: 5,
+          },
+        },
+      };
+
+      document.updateSelection({
+        clientID: 'client-1',
+        selection: {
+          from: 5,
+          to: 5,
+        },
+      }, 'socket-1');
+
+      expect(document.selections['socket-1']).to.eql({
+        clientID: 'client-1',
+        selection: {
+          from: 5,
+          to: 5,
+        },
+      });
+      expect(updateSelectionSpy.returned(true)).to.be.true;
+    });
+
+    it('should not update selection of client and return false if not different', () => {
+      const updateSelectionSpy = sinon.spy(document, 'updateSelection');
+      document.selections = {
+        'socket-1': {
+          clientID: 'client-1',
+          selection: {
+            from: 5,
+            to: 5,
+          },
+        },
+      };
+
+      document.updateSelection({
+        clientID: 'client-1',
+        selection: {
+          from: 5,
+          to: 5,
+        },
+      }, 'socket-1');
+
+      expect(document.selections['socket-1']).to.eql({
+        clientID: 'client-1',
+        selection: {
+          from: 5,
+          to: 5,
+        },
+      });
+      expect(updateSelectionSpy.returned(false)).to.be.true;
+    });
+  });
+
+  describe('# removeSelection', () => {
+    it('should remove socket entry from selections list', () => {
+      document.selections = {
+        'socket-1': {
+          clientID: 'client-1',
+          selection: {
+            from: 5,
+            to: 5,
+          },
+        },
+        'socket-2': {
+          clientID: 'client-2',
+          selection: {
+            from: 2,
+            to: 3,
+          },
+        },
+      };
+
+      document.removeSelection('socket-1');
+
+      expect(document.selections).to.eql({
+        'socket-2': {
+          clientID: 'client-2',
+          selection: {
+            from: 2,
+            to: 3,
+          },
+        },
+      });
+    });
+  });
+
+  describe('# getSelections', () => {
+    it('should return selections list as an array', () => {
+      document.selections = {
+        'socket-1': {
+          clientID: 'client-1',
+          selection: {
+            from: 5,
+            to: 5,
+          },
+        },
+        'socket-2': {
+          clientID: 'client-2',
+          selection: {
+            from: 2,
+            to: 3,
+          },
+        },
+      };
+
+      expect(document.getSelections()).to.eql([
+        {
+          clientID: 'client-1',
+          selection: {
+            from: 5,
+            to: 5,
+          },
+        },
+        {
+          clientID: 'client-2',
+          selection: {
+            from: 2,
+            to: 3,
+          },
+        },
+      ]);
+    });
+  });
+
+  describe('# addClient', () => {
+    it('should add client to list', () => {
+      document.clients = {
+        'socket-a': 'client-a',
+        'socket-b': 'client-b',
+      };
+
+      document.addClient('client-1', 'socket-1');
+
+      expect(document.clients).to.eql({
+        'socket-a': 'client-a',
+        'socket-b': 'client-b',
+        'socket-1': 'client-1',
+      });
+    });
+  });
+
+  describe('# removeClient', () => {
+    it('should remove client associated to socketID from list', () => {
+      document.clients = {
+        'socket-a': 'client-a',
+        'socket-b': 'client-b',
+      };
+
+      document.removeClient('socket-a');
+
+      expect(document.clients).to.eql({
+        'socket-b': 'client-b',
+      });
+    });
+  });
+
+  describe('# getClients', () => {
+    it('should return clients list as an array', () => {
+      document.clients = {
+        'socket-a': 'client-1',
+        'socket-b': 'client-2',
+      };
+
+      expect(document.getClients()).to.eql([
+        'client-1',
+        'client-2',
+      ]);
     });
   });
 });
