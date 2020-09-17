@@ -6,7 +6,7 @@ install:
 before_deploy:
 - npm run build
 script:
-- npm run test
+- npm run coverage
 deploy:
   provider: npm
   email: julien.aupart@gmail.com

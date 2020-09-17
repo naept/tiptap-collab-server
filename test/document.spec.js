@@ -22,7 +22,7 @@ const storedData = {
 };
 const updateData = {
   version: 20,
-  clientID: 820185065,
+  clientID: '820185065',
   steps: [
     {
       stepType: 'replace',

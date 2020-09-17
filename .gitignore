@@ -9,3 +9,4 @@ lib/
 coverage/
 .nyc_output
 db/
+.coveralls.yml
