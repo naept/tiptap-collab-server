@@ -13,6 +13,13 @@ export default class Document {
     this.onNewVersionCallback = () => {};
   }
 
+  reset(doc) {
+    this.database.storeDoc({
+      version: 0,
+      doc,
+    });
+  }
+
   getDoc() {
     return this.database.getDoc();
   }
@@ -79,6 +86,10 @@ export default class Document {
 
     // Store new steps
     this.database.storeSteps(newSteps);
+  }
+
+  deleteDatabase() {
+    this.database.deleteFiles();
   }
 
   onVersionMismatch(callback) {

@@ -83,6 +83,35 @@ describe('Document', () => {
     });
   });
 
+  describe('# reset', () => {
+    it('should store new doc with version 0 in database', () => {
+      const databaseStoreDocSpy = sinon.spy(document.database, 'storeDoc');
+      const doc = {
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            content: [
+              {
+                type: 'text',
+                text: 'Brand new text!',
+              },
+            ],
+          },
+        ],
+      };
+
+      document.reset(doc);
+
+      expect(databaseStoreDocSpy.calledOnceWithExactly({
+        version: 0,
+        doc,
+      })).to.be.true;
+
+      databaseStoreDocSpy.restore();
+    });
+  });
+
   describe('# getDoc', () => {
     it('should return database.getDoc() result', () => {
       const databaseGetDocStub = sinon.stub(document.database, 'getDoc');
@@ -297,6 +326,18 @@ describe('Document', () => {
       )).to.be.true;
 
       databaseStoreStepsSpy.restore();
+    });
+  });
+
+  describe('# deleteDatabase', () => {
+    it('should call database.deleteFiles', () => {
+      const databaseDeleteFilesSpy = sinon.spy(document.database, 'deleteFiles');
+
+      document.deleteDatabase();
+
+      expect(databaseDeleteFilesSpy.calledOnce);
+
+      databaseDeleteFilesSpy.restore();
     });
   });
 

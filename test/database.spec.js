@@ -182,6 +182,46 @@ describe('Database', () => {
     });
   });
 
+  describe('# deleteFiles', () => {
+    it('should delete all the room related files', () => {
+      const fsUnlinkSyncSpy = sinon.spy(fs, 'unlinkSync');
+
+      database.storeDoc({});
+      database.storeSteps([]);
+      database.storeLocked(true);
+
+      expect(database.deleteFiles()).to.be.true;
+
+      expect(fsUnlinkSyncSpy.calledThrice).to.be.true;
+      expect(fsUnlinkSyncSpy.calledWithExactly('./db/Namespace/Room-db.json')).to.be.true;
+      expect(fsUnlinkSyncSpy.calledWithExactly('./db/Namespace/Room-db_steps.json')).to.be.true;
+      expect(fsUnlinkSyncSpy.calledWithExactly('./db/Namespace/Room-db_locked.json')).to.be.true;
+
+      fsUnlinkSyncSpy.restore();
+    });
+
+    it('should return false if Doc file does not exist', () => {
+      database.storeSteps([]);
+      database.storeLocked(true);
+
+      expect(database.deleteFiles()).to.be.false;
+    });
+
+    it('should return false if Steps file does not exist', () => {
+      database.storeDoc({});
+      database.storeLocked(true);
+
+      expect(database.deleteFiles()).to.be.false;
+    });
+
+    it('should return false if Lock file does not exist', () => {
+      database.storeDoc({});
+      database.storeSteps([]);
+
+      expect(database.deleteFiles()).to.be.false;
+    });
+  });
+
   describe('# getDoc', () => {
     it('should retrieve document data from file', () => {
       fs.writeFileSync('./db/Namespace/Room-db.json', JSON.stringify(

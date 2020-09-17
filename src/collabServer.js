@@ -11,10 +11,10 @@ export default class CollabServer {
     this.documents = [];
 
     this.beforeConnection((_param, resolve) => { resolve(); });
-    // this.connectionGuard = () => {};
-    // this.onConnectedCallback = () => {};
-    // this.onUpdatingCallback = () => {};
-    // this.onUpdatedCallback = () => {};
+    this.onClientConnect(() => {});
+    this.onClientDisconnect(() => {});
+    this.onNewDocument(() => {});
+    this.onLeaveDocument(() => {});
   }
 
   serve() {
@@ -26,8 +26,6 @@ export default class CollabServer {
       const namespace = socket.nsp;
 
       socket.on('join', async ({ room, clientID, options }) => {
-        // console.log('server on join', room);
-
         this.connectionGuard({
           socket, room, clientID, options,
         }).then(() => {
@@ -38,7 +36,6 @@ export default class CollabServer {
           // Handle version mismatch:
           // we send all steps of this version back to the user
           document.onVersionMismatch(({ version, steps }) => {
-            // console.log('document onVersionMismatch');
             namespace.in(room).emit('update', {
               version,
               steps,
@@ -48,7 +45,6 @@ export default class CollabServer {
           // Handle new document version
           // send update to everyone (me and others)
           document.onNewVersion(({ version, steps }) => {
-            // console.log('document onNewVersion');
             namespace.in(room).emit('update', {
               version,
               steps,
@@ -57,32 +53,25 @@ export default class CollabServer {
 
           // Handle update
           socket.on('update', async (data) => {
-            // console.log('server on update', data);
-            // this.onUpdatingCallback({ document, data });
             document.update(data);
-            // this.onUpdatedCallback({ document, data });
           });
 
           // Handle update
           socket.on('updateSelection', async (data) => {
-            // console.log('server on updateSelection', data);
             if (document.updateSelection(data, socket.id)) {
-              // console.log('server emit getSelections', document.getSelections());
               socket.to(room).emit('getSelections', document.getSelections());
             }
           });
 
           // Handle disconnect
           socket.on('disconnect', () => {
-            // console.log('server on disconnect');
-
             document.removeSelection(socket.id);
-            // console.log('server emit getSelections', document.getSelections());
             namespace.in(room).emit('getSelections', document.getSelections());
 
             document.removeClient(socket.id);
-            // console.log('server emit getClients', document.getClients());
             namespace.in(room).emit('getClients', document.getClients());
+
+            this.onClientConnectionCallback({ clientID, document });
 
             if (!namespace.adapter.rooms[room]) {
               // Nobody is connected to the document anymore so it is deleted
@@ -92,19 +81,16 @@ export default class CollabServer {
           });
 
           // send latest document
-          // console.log('server emit init');
           socket.emit('init', document.getDoc());
 
           // send selections
-          // console.log('server emit getSelections', document.getSelections());
           namespace.in(room).emit('getSelections', document.getSelections());
 
           // send client list
           document.addClient(clientID, socket.id);
-          // console.log('server emit getClients', document.getClients());
           namespace.in(room).emit('getClients', document.getClients());
 
-          // this.onConnectedCallback({ document });
+          this.onClientConnectionCallback({ clientID, document });
         }).catch((error) => {
           socket.emit('initFailed', error);
         });
@@ -118,6 +104,7 @@ export default class CollabServer {
     let document = this.findDocument(namespaceName, room);
     if (!document) {
       document = new Document(namespaceName, room, this.options.maxStoredSteps);
+      this.onCreateDocumentCallback(document);
       this.documents.push(document);
     }
 
@@ -129,9 +116,8 @@ export default class CollabServer {
   }
 
   removeDocument(document) {
-    // console.log('removing document', this.documents.map((doc) => doc.id), document.id);
+    this.onRemoveDocumentCallback(document);
     this.documents = this.documents.filter((doc) => doc.id !== document.id);
-    // console.log('removed document', this.documents.map((doc) => doc.id));
   }
 
   close() {
@@ -146,23 +132,23 @@ export default class CollabServer {
     return this;
   }
 
-  // beforeConnection(callback) {
-  //   this.connectionGuard = callback;
-  //   return this;
-  // }
+  onClientConnect(callback) {
+    this.onClientConnectionCallback = callback;
+    return this;
+  }
 
-  // onConnected(callback) {
-  //   this.onConnectedCallback = callback;
-  //   return this;
-  // }
+  onClientDisconnect(callback) {
+    this.onClientDisconnectionCallback = callback;
+    return this;
+  }
 
-  // onUpdating(callback) {
-  //   this.onUpdatingCallback = callback;
-  //   return this;
-  // }
+  onNewDocument(callback) {
+    this.onCreateDocumentCallback = callback;
+    return this;
+  }
 
-  // onUpdated(callback) {
-  //   this.onUpdatedCallback = callback;
-  //   return this;
-  // }
+  onLeaveDocument(callback) {
+    this.onRemoveDocumentCallback = callback;
+    return this;
+  }
 }

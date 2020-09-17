@@ -6,7 +6,6 @@ const lockedTrailer = '-db_locked.json';
 const stepsTrailer = '-db_steps.json';
 const defaultData = {
   version: 0,
-  // doc: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '' }] }] },
   doc: { type: 'doc', content: [{ type: 'paragraph' }] },
 };
 
@@ -49,6 +48,26 @@ export default class Database {
 
   storeLocked(locked) {
     fs.writeFileSync(this.makePath(lockedTrailer), locked.toString());
+  }
+
+  deleteFiles() {
+    let success = true;
+    try {
+      fs.unlinkSync(this.makePath(docTrailer));
+    } catch (e) {
+      success = false;
+    }
+    try {
+      fs.unlinkSync(this.makePath(lockedTrailer));
+    } catch (e) {
+      success = false;
+    }
+    try {
+      fs.unlinkSync(this.makePath(stepsTrailer));
+    } catch (e) {
+      success = false;
+    }
+    return success;
   }
 
   getDoc() {
