@@ -188,24 +188,6 @@ describe('CollabServer', () => {
         clientID: 'client-1',
       });
     });
-
-    // it('should call onConnecting callback', (done) => {
-    //   const callback = (data) => {
-    //     expect(data).to.have.property('socket');
-    //     expect(data).to.have.property('room');
-    //     expect(data).to.have.property('clientID');
-    //     expect(data).to.have.property('options');
-    //     collabServer.onConnecting(() => {});
-    //     done();
-    //   };
-
-    //   collabServer.onConnecting(callback);
-
-    //   socket.emit('join', {
-    //     room: 'some-room',
-    //     clientID: 'client-1',
-    //   });
-    // });
   });
 
   describe('# On update message', () => {
@@ -251,17 +233,6 @@ describe('CollabServer', () => {
       });
       socket.emit('update', updateData);
     });
-
-    // it('should call onUpdatingCallback', () => {
-    //   const onUpdatingCallbackSpy = sinon.spy(collabServer, 'onUpdatingCallback');
-
-    //   socket.emit('join', 'some-room');
-    //   socket.emit('update', updateData);
-
-    //   expect(onUpdatingCallbackSpy.calledOnce).to.be.true;
-
-    //   onUpdatingCallbackSpy.restore();
-    // });
   });
 
   describe('# On updateSelection message', () => {

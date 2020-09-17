@@ -1,0 +1,18 @@
+language: node_js
+node_js:
+- stable
+install:
+- npm install
+before_deploy:
+- npm run build
+script:
+- npm run test
+deploy:
+  provider: npm
+  email: julien.aupart@gmail.com
+  api_key:
+    secure: k0XNDI7axOXwNUeWrRdrli3ZorEMRZPcKE/P9Og703wqapVNNGakxa9FUDz3ZF8yRPP6Jgf5UnKFvx5J6lYqZD7Biastro4LEJrZGZNlp07liZWLFMdYXC4DWlGmvW0QHvoBhDZ40Gw7ix+dnKtiISOon+f2SPTen6LqZLs33TubR8blBCA5ObuS+0Yi2EVvTPXn9ROgDaV836/CQG77Ihj+H/hKENvQDqRJ78PlqNBIZX1cnnXXH5c/xdFDlaAqmFFENnjIzW2vgefJk8NHqR0f2TfXgD4YginzZOXCNjpncjds7aJj+iDmaBGkn4Ur7S4cW7r380oYIyaLuIPj3J2Hz6va4ujCCz2oZzHG+eea4RgTCPkIzUchftRR5pXHD0MkdZ2xNcVXTjJiYImtkVudYAXRA3ThxI7GHd4dl9HWSm6Z3/dRoJaRxQFBTAH9swNWC1hfwQ+GgsP6VKkFjflSlhtf2i3gZ+ROuRYvPJIG5KvXCI543fhFMxYtrZAJk3lQ/jYHNPLqBdDA3HBvO4CW0bboBSJ90/TLMqnGNgimOV8EyL1zeSNTMgMvK9dtJ9HVvgm70FiBMMWRUvU8PShY5/AhvXppubripI3ftUe7+2fq1tI5Gg8jxbnrK2qtiyQ40tsotvPbiX/0vCYJjleAYvzJTsuEF7dysgHpC4w=
+  on:
+    tags: true
+    repo: naept/tiptap-collab-server
+  skip_cleanup: 'true'

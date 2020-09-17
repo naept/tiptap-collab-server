@@ -71,7 +71,7 @@ export default class CollabServer {
             document.removeClient(socket.id);
             namespace.in(room).emit('getClients', document.getClients());
 
-            this.onClientConnectionCallback({ clientID, document });
+            this.onClientDisconnectionCallback({ clientID, document });
 
             if (!namespace.adapter.rooms[room]) {
               // Nobody is connected to the document anymore so it is deleted
