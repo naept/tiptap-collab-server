@@ -314,14 +314,14 @@ describe('Document', () => {
       document.storeSteps({
         version: 20,
         steps: updateData.steps,
-        clientID: 820185065,
+        clientID: '820185065',
       });
 
       expect(databaseStoreStepsSpy.calledOnceWithExactly(
         updateData.steps.map((step, index) => ({
           step: JSON.parse(JSON.stringify(step)),
           version: 20 + index + 1,
-          clientID: 820185065,
+          clientID: '820185065',
         })),
       )).to.be.true;
 

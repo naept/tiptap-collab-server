@@ -7,7 +7,7 @@ A socket.io server for [tiptap](https://github.com/ueberdosis/tiptap) collaborat
 
 ## Installation
 ```sh
-$ npm install tiptap-collab-server
+npm install tiptap-collab-server
 ```
 
 ## Basic Setup
@@ -39,13 +39,13 @@ new CollabServer({
 
 ## Tests
 ```sh
-$ npm run test
+npm run test
 ```
 Contributions are welcome
 
 ## Contributing
 Builds library for publication
 ```sh
-$ npm run test
+npm run test
 ```
 Issues and pull-requests are welcome and will be considered.
