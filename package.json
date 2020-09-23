@@ -1,6 +1,6 @@
 {
   "name": "tiptap-collab-server",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A socket.io server for tiptap collaboration module. Handles multi-documents, users cursors, and hooks for programmers.",
   "main": "lib/collabServer.js",
   "files": [
