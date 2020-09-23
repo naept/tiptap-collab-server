@@ -192,29 +192,30 @@ describe('CollabServer', () => {
 
   describe('# On update message', () => {
     it('should emit new version of steps if version matches', (done) => {
-      const document = collabServer.findOrCreateDocument('/some-namespace', 'some-room');
-      const databaseGetDocStub = sinon.stub(document.database, 'getDoc');
-      databaseGetDocStub.returns(storedData);
+      collabServer.findOrCreateDocument('/some-namespace', 'some-room').then((document) => {
+        const databaseGetDocStub = sinon.stub(document.database, 'getDoc');
+        databaseGetDocStub.returns(storedData);
 
-      socket.on('update', (data) => {
-        expect(data).to.eql({
-          version: updateData.version + 1,
-          steps: updateData.steps.map((step, index) => ({
-            step: JSON.parse(JSON.stringify(step)),
-            version: updateData.version + index + 1,
-            clientID: updateData.clientID,
-          })),
+        socket.on('update', (data) => {
+          expect(data).to.eql({
+            version: updateData.version + 1,
+            steps: updateData.steps.map((step, index) => ({
+              step: JSON.parse(JSON.stringify(step)),
+              version: updateData.version + index + 1,
+              clientID: updateData.clientID,
+            })),
+          });
+
+          databaseGetDocStub.restore();
+          done();
         });
 
-        databaseGetDocStub.restore();
-        done();
+        socket.emit('join', {
+          room: 'some-room',
+          clientID: 'client-1',
+        });
+        socket.emit('update', updateData);
       });
-
-      socket.emit('join', {
-        room: 'some-room',
-        clientID: 'client-1',
-      });
-      socket.emit('update', updateData);
     });
 
     it('should emit stored version of steps if version does not match', (done) => {

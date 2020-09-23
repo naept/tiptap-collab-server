@@ -11,10 +11,10 @@ export default class CollabServer {
     this.documents = [];
 
     this.beforeConnection((_param, resolve) => { resolve(); });
-    this.onClientConnect(() => {});
-    this.onClientDisconnect(() => {});
-    this.onNewDocument(() => {});
-    this.onLeaveDocument(() => {});
+    this.onClientConnect((_param, resolve) => { resolve(); });
+    this.onClientDisconnect((_param, resolve) => { resolve(); });
+    this.onNewDocument((_param, resolve) => { resolve(); });
+    this.onLeaveDocument((_param, resolve) => { resolve(); });
   }
 
   serve() {
@@ -28,10 +28,10 @@ export default class CollabServer {
       socket.on('join', async ({ room, clientID, options }) => {
         this.connectionGuard({
           socket, room, clientID, options,
-        }).then(() => {
+        }).then(async () => {
           socket.join(room);
 
-          const document = this.findOrCreateDocument(namespace.name, room, clientID);
+          const document = await this.findOrCreateDocument(namespace.name, room, clientID);
 
           // send latest document
           socket.emit('init', document.getDoc());
@@ -67,25 +67,25 @@ export default class CollabServer {
           });
 
           // Handle disconnect
-          socket.on('disconnect', () => {
+          socket.on('disconnect', async () => {
             document.removeSelection(socket.id);
             namespace.in(room).emit('getSelections', document.getSelections());
 
             document.removeClient(socket.id);
             namespace.in(room).emit('getClients', document.getClients());
 
-            this.onClientDisconnectionCallback({ clientID, document });
+            await this.onClientDisconnectionCallback({ clientID, document });
 
             if (!namespace.adapter.rooms[room]) {
               // Nobody is connected to the document anymore so it is deleted
               // (data is kept in database)
-              this.removeDocument(document, clientID);
+              await this.removeDocument(document, clientID);
             }
           });
 
           // Add client to document
           document.addClient(clientID, socket.id);
-          this.onClientConnectionCallback({ clientID, document });
+          await this.onClientConnectionCallback({ clientID, document });
 
           // send client list
           namespace.in(room).emit('getClients', document.getClients());
@@ -101,11 +101,11 @@ export default class CollabServer {
     return this;
   }
 
-  findOrCreateDocument(namespaceName, room, clientID) {
+  async findOrCreateDocument(namespaceName, room, clientID) {
     let document = this.findDocument(namespaceName, room);
     if (!document) {
       document = new Document(namespaceName, room, this.options.maxStoredSteps);
-      this.onCreateDocumentCallback({ document, clientID });
+      await this.onCreateDocumentCallback({ document, clientID });
       this.documents.push(document);
     }
 
@@ -113,11 +113,13 @@ export default class CollabServer {
   }
 
   findDocument(namespaceName, room) {
-    return this.documents.find((document) => document.id === `${namespaceName}/${room}`);
+    return this.documents.find(
+      (document) => document.id === `${namespaceName}/${room}`,
+    );
   }
 
-  removeDocument(document, clientID) {
-    this.onRemoveDocumentCallback({ document, clientID });
+  async removeDocument(document, clientID) {
+    await this.onRemoveDocumentCallback({ document, clientID });
     this.documents = this.documents.filter((doc) => doc.id !== document.id);
   }
 
@@ -134,22 +136,30 @@ export default class CollabServer {
   }
 
   onClientConnect(callback) {
-    this.onClientConnectionCallback = callback;
+    this.onClientConnectionCallback = (param) => new Promise((resolve, reject) => {
+      callback(param, resolve, reject);
+    });
     return this;
   }
 
   onClientDisconnect(callback) {
-    this.onClientDisconnectionCallback = callback;
+    this.onClientDisconnectionCallback = (param) => new Promise((resolve, reject) => {
+      callback(param, resolve, reject);
+    });
     return this;
   }
 
   onNewDocument(callback) {
-    this.onCreateDocumentCallback = callback;
+    this.onCreateDocumentCallback = (param) => new Promise((resolve, reject) => {
+      callback(param, resolve, reject);
+    });
     return this;
   }
 
   onLeaveDocument(callback) {
-    this.onRemoveDocumentCallback = callback;
+    this.onRemoveDocumentCallback = (param) => new Promise((resolve, reject) => {
+      callback(param, resolve, reject);
+    });
     return this;
   }
 }
