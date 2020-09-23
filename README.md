@@ -28,10 +28,10 @@ new CollabServer({
   .onClientDisconnect(({ clientID, document }) => {
 
   })
-  .onNewDocument((document) => {
+  .onNewDocument(({ clientID, document }) => {
     
   })
-  .onLeaveDocument((document) => {
+  .onLeaveDocument(({ clientID, document }) => {
     
   })
   .serve()

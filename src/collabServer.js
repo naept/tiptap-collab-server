@@ -31,7 +31,10 @@ export default class CollabServer {
         }).then(() => {
           socket.join(room);
 
-          const document = this.findOrCreateDocument(namespace.name, room);
+          const document = this.findOrCreateDocument(namespace.name, room, clientID);
+
+          // send latest document
+          socket.emit('init', document.getDoc());
 
           // Handle version mismatch:
           // we send all steps of this version back to the user
@@ -76,21 +79,19 @@ export default class CollabServer {
             if (!namespace.adapter.rooms[room]) {
               // Nobody is connected to the document anymore so it is deleted
               // (data is kept in database)
-              this.removeDocument(document);
+              this.removeDocument(document, clientID);
             }
           });
 
-          // send latest document
-          socket.emit('init', document.getDoc());
+          // Add client to document
+          document.addClient(clientID, socket.id);
+          this.onClientConnectionCallback({ clientID, document });
+
+          // send client list
+          namespace.in(room).emit('getClients', document.getClients());
 
           // send selections
           namespace.in(room).emit('getSelections', document.getSelections());
-
-          // send client list
-          document.addClient(clientID, socket.id);
-          namespace.in(room).emit('getClients', document.getClients());
-
-          this.onClientConnectionCallback({ clientID, document });
         }).catch((error) => {
           socket.emit('initFailed', error);
         });
@@ -100,11 +101,11 @@ export default class CollabServer {
     return this;
   }
 
-  findOrCreateDocument(namespaceName, room) {
+  findOrCreateDocument(namespaceName, room, clientID) {
     let document = this.findDocument(namespaceName, room);
     if (!document) {
       document = new Document(namespaceName, room, this.options.maxStoredSteps);
-      this.onCreateDocumentCallback(document);
+      this.onCreateDocumentCallback({ document, clientID });
       this.documents.push(document);
     }
 
@@ -115,8 +116,8 @@ export default class CollabServer {
     return this.documents.find((document) => document.id === `${namespaceName}/${room}`);
   }
 
-  removeDocument(document) {
-    this.onRemoveDocumentCallback(document);
+  removeDocument(document, clientID) {
+    this.onRemoveDocumentCallback({ document, clientID });
     this.documents = this.documents.filter((doc) => doc.id !== document.id);
   }
 
