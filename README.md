@@ -22,17 +22,21 @@ new CollabServer({
     
     resolve()
   })
-  .onClientConnect(({ clientID, document }) => {
+  .onClientConnect(({ clientID, document }, resolve, reject) => {
 
+    resolve()
   })
-  .onClientDisconnect(({ clientID, document }) => {
+  .onClientDisconnect(({ clientID, document }, resolve, reject) => {
 
+    resolve()
   })
-  .onNewDocument(({ clientID, document }) => {
+  .onNewDocument(({ clientID, document }, resolve, reject) => {
     
+    resolve()
   })
-  .onLeaveDocument(({ clientID, document }) => {
+  .onLeaveDocument(({ clientID, document }, resolve, reject) => {
     
+    resolve()
   })
   .serve()
 ```
