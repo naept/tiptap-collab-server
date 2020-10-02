@@ -3,8 +3,13 @@ import sinon from 'sinon';
 import Document from '../src/document';
 import Database from '../src/database';
 
-const storedData = {
-  version: 20,
+const defaultData = {
+  version: 0,
+  doc: { type: 'doc', content: [{ type: 'paragraph' }] },
+};
+
+const storedDocument = {
+  version: 3,
   doc: {
     type: 'doc',
     content: [
@@ -20,8 +25,85 @@ const storedData = {
     ],
   },
 };
+
+const storedSteps = [
+  {
+    version: 1,
+    step: {
+      stepType: 'replace',
+      from: 1,
+      to: 1,
+      slice: {
+        content: [
+          {
+            type: 'text',
+            text: 't',
+          },
+        ],
+      },
+    },
+    clientID: '123456789',
+  },
+  {
+    version: 2,
+    step: {
+      stepType: 'replace',
+      from: 2,
+      to: 2,
+      slice: {
+        content: [
+          {
+            type: 'text',
+            text: 'e',
+          },
+        ],
+      },
+    },
+    clientID: '123456789',
+  },
+  {
+    version: 3,
+    step: {
+      stepType: 'replace',
+      from: 3,
+      to: 3,
+      slice: {
+        content: [
+          {
+            type: 'text',
+            text: 'x',
+          },
+        ],
+      },
+    },
+    clientID: '123456789',
+  },
+];
+
+const storedSelections = {
+  'socket-a': {
+    clientID: 'client-1',
+    selection: {
+      from: 3,
+      to: 3,
+    },
+  },
+  'socket-b': {
+    clientID: 'client-2',
+    selection: {
+      from: 2,
+      to: 5,
+    },
+  },
+};
+
+const storedClients = {
+  'socket-a': 'client-1',
+  'socket-b': 'client-2',
+};
+
 const updateData = {
-  version: 20,
+  version: 3,
   clientID: '820185065',
   steps: [
     {
@@ -37,39 +119,80 @@ const updateData = {
         ],
       },
     },
+    {
+      stepType: 'replace',
+      from: 5,
+      to: 5,
+      slice: {
+        content: [
+          {
+            type: 'text',
+            text: '!',
+          },
+        ],
+      },
+    },
   ],
+};
+
+const updatedDocument = {
+  version: 5,
+  doc: {
+    type: 'doc',
+    content: [
+      {
+        type: 'paragraph',
+        content: [
+          {
+            type: 'text',
+            text: 'Test!',
+          },
+        ],
+      },
+    ],
+  },
 };
 
 describe('Document', () => {
   let document;
 
+  let databaseLockSpy;
+  let databaseUnlockSpy;
+
   it('can be created with maxStoredSteps argument', () => {
     document = new Document('/Namespace', 'Room', 50);
-    expect(document.database.maxStoredSteps).to.be.equal(50);
+    expect(document.maxStoredSteps).to.be.equal(50);
   });
 
   beforeEach(() => {
     document = new Document('/Namespace', 'Room');
+    databaseLockSpy = sinon.spy(document.database, 'lock');
+    databaseUnlockSpy = sinon.spy(document.database, 'unlock');
+  });
+
+  afterEach((done) => {
+    databaseLockSpy.restore();
+    databaseUnlockSpy.restore();
+    document.deleteDatabase()
+      .then(() => {
+        done();
+      });
   });
 
   describe('# When created', () => {
-    it('should have an id', () => {
-      expect(document).to.have.property('id');
-      expect(document.id).to.equal('/Namespace/Room');
+    it('should have a namespaceDir', () => {
+      expect(document).to.have.property('namespaceDir');
+      expect(document.namespaceDir).to.equal('/Namespace');
     });
 
-    it('should have a list of selections', () => {
-      expect(document).to.have.property('selections');
-    });
-
-    it('should have a list of clients', () => {
-      expect(document).to.have.property('clients');
+    it('should have a roomName', () => {
+      expect(document).to.have.property('roomName');
+      expect(document.roomName).to.equal('Room');
     });
 
     it('should create database', () => {
       expect(document).to.have.property('database');
       expect(document.database).to.be.instanceOf(Database);
-      expect(document.database.maxStoredSteps).to.be.equal(1000);
     });
 
     it('should have onVersionMismatchCallback empty function', () => {
@@ -81,263 +204,943 @@ describe('Document', () => {
       expect(document).to.have.property('onNewVersionCallback');
       expect(document.onNewVersionCallback()).to.equal(undefined);
     });
+
+    it('should have onSelectionsUpdatedCallback empty function', () => {
+      expect(document).to.have.property('onSelectionsUpdatedCallback');
+      expect(document.onSelectionsUpdatedCallback()).to.equal(undefined);
+    });
+
+    it('should have onClientsUpdatedCallback empty function', () => {
+      expect(document).to.have.property('onClientsUpdatedCallback');
+      expect(document.onClientsUpdatedCallback()).to.equal(undefined);
+    });
   });
 
-  describe('# reset', () => {
-    it('should store new doc with version 0 in database', () => {
-      const databaseStoreDocSpy = sinon.spy(document.database, 'storeDoc');
-      const doc = {
-        type: 'doc',
-        content: [
-          {
-            type: 'paragraph',
-            content: [
-              {
-                type: 'text',
-                text: 'Brand new text!',
-              },
-            ],
-          },
-        ],
-      };
+  describe('# initDoc', () => {
+    const docContent = {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            {
+              type: 'text',
+              text: 'Brand new text!',
+            },
+          ],
+        },
+      ],
+    };
 
-      document.reset(doc);
+    it('should store new doc with version in database', (done) => {
+      document.initDoc((data) => {
+        expect(data).to.be.eql(defaultData);
+        return new Promise((resolve) => {
+          resolve({
+            version: 1,
+            doc: docContent,
+          });
+        });
+      })
+        .then(() => document.getDoc())
+        .then((data) => {
+          expect(data).to.be.eql({
+            version: 1,
+            doc: docContent,
+          });
+        })
+        .finally(() => {
+          done();
+        });
+    });
 
-      expect(databaseStoreDocSpy.calledOnceWithExactly({
-        version: 0,
-        doc,
-      })).to.be.true;
+    it('should return the new doc with version', (done) => {
+      document.initDoc((data) => {
+        expect(data).to.be.eql(defaultData);
+        return new Promise((resolve) => {
+          resolve({
+            version: 1,
+            doc: docContent,
+          });
+        });
+      })
+        .then((data) => {
+          expect(data).to.be.eql({
+            version: 1,
+            doc: docContent,
+          });
+        })
+        .finally(() => {
+          done();
+        });
+    });
 
-      databaseStoreDocSpy.restore();
+    it('should lock the database during operation', (done) => {
+      const databaseGetSpy = sinon.spy(document.database, 'get');
+      const databaseStoreSpy = sinon.spy(document.database, 'store');
+
+      document.initDoc(() => new Promise((resolve) => {
+        resolve({
+          version: 1,
+          doc: docContent,
+        });
+      }))
+        .then(() => {
+          expect(databaseLockSpy.calledBefore(databaseGetSpy)).to.be.true;
+          expect(databaseUnlockSpy.calledAfter(databaseStoreSpy)).to.be.true;
+        })
+        .finally(() => {
+          databaseGetSpy.restore();
+          databaseStoreSpy.restore();
+          done();
+        });
     });
   });
 
   describe('# getDoc', () => {
-    it('should return database.getDoc() result', () => {
-      const databaseGetDocStub = sinon.stub(document.database, 'getDoc');
-      databaseGetDocStub.returns({ test: 'Document' });
+    it('should return doc defaultData if it does not exist in database', (done) => {
+      document.getDoc()
+        .then((data) => {
+          expect(data).to.be.eql(defaultData);
+        })
+        .finally(() => {
+          done();
+        });
+    });
 
-      const doc = document.getDoc();
+    it('should return doc data if it does exist in database', (done) => {
+      const databaseGetStub = sinon.stub(document.database, 'get');
+      databaseGetStub.withArgs('doc').resolves(storedDocument);
 
-      expect(doc).to.be.eql({ test: 'Document' });
+      document.getDoc()
+        .then((data) => {
+          expect(data).to.be.eql(storedDocument);
+        })
+        .finally(() => {
+          databaseGetStub.restore();
+          done();
+        });
+    });
 
-      databaseGetDocStub.restore();
+    it('should lock the database during operation', (done) => {
+      const databaseGetSpy = sinon.spy(document.database, 'get');
+
+      document.getDoc()
+        .then(() => {
+          expect(databaseLockSpy.calledBefore(databaseGetSpy)).to.be.true;
+          expect(databaseUnlockSpy.calledAfter(databaseGetSpy)).to.be.true;
+        })
+        .finally(() => {
+          databaseGetSpy.restore();
+          done();
+        });
     });
   });
 
-  describe('# getStepsAfterVersion', () => {
-    it('should return only steps with version superior to argument', () => {
-      const databaseGetStepsStub = sinon.stub(document.database, 'getSteps');
-      databaseGetStepsStub.returns([
-        {
-          version: 1,
-          data: 'step 1',
-        },
-        {
-          version: 2,
-          data: 'step 2',
-        },
-        {
-          version: 3,
-          data: 'step 3',
-        },
-        {
-          version: 4,
-          data: 'step 4',
-        },
-        {
-          version: 5,
-          data: 'step 5',
-        },
-      ]);
-
-      const stepsAfterVersion2 = document.getStepsAfterVersion(2);
-
-      expect(stepsAfterVersion2).to.be.eql([{
-        version: 3,
-        data: 'step 3',
-      },
-      {
-        version: 4,
-        data: 'step 4',
-      },
-      {
-        version: 5,
-        data: 'step 5',
-      },
-      ]);
-
-      databaseGetStepsStub.restore();
-    });
-  });
-
-  describe('# update', () => {
-    let databaseGetLockedStub;
-    let databaseGetDocStub;
-    let databaseStoreLockedSpy;
-    let databaseStoreStepsSpy;
-    let databaseStoreDocSpy;
+  describe('# updateDoc', () => {
+    let databaseGetStub;
 
     beforeEach(() => {
-      databaseGetLockedStub = sinon.stub(document.database, 'getLocked');
-      databaseGetDocStub = sinon.stub(document.database, 'getDoc');
-      databaseStoreLockedSpy = sinon.spy(document.database, 'storeLocked');
-      databaseStoreStepsSpy = sinon.spy(document.database, 'storeSteps');
-      databaseStoreDocSpy = sinon.spy(document.database, 'storeDoc');
-
-      databaseGetLockedStub.returns(false);
-      databaseGetDocStub.returns(storedData);
+      databaseGetStub = sinon.stub(document.database, 'get');
+      databaseGetStub.withArgs('doc').resolves(storedDocument);
+      databaseGetStub.withArgs('steps').resolves(storedSteps);
     });
 
     afterEach(() => {
-      databaseGetLockedStub.restore();
-      databaseGetDocStub.restore();
-      databaseStoreLockedSpy.restore();
-      databaseStoreStepsSpy.restore();
-      databaseStoreDocSpy.restore();
+      databaseGetStub.restore();
     });
 
-    it('should do nothing if database is locked', () => {
-      databaseGetLockedStub.returns(true);
-
-      document.update(updateData);
-
-      expect(databaseStoreLockedSpy.notCalled).to.be.true;
-      expect(databaseStoreStepsSpy.notCalled).to.be.true;
-      expect(databaseStoreDocSpy.notCalled).to.be.true;
-    });
-
-    it('should lock database', () => {
-      document.update(updateData);
-
-      expect(databaseStoreLockedSpy.firstCall.calledWith(true)).to.be.true;
-      expect(databaseStoreLockedSpy.calledBefore(databaseStoreStepsSpy)).to.be.true;
-      expect(databaseStoreLockedSpy.calledBefore(databaseStoreDocSpy)).to.be.true;
-    });
-
-    describe('if version is superior to stored version', () => {
-      let documentOnVersionMismatchCallbackSpy;
-
-      beforeEach(() => {
-        databaseGetDocStub.returns({ version: 50 });
-        documentOnVersionMismatchCallbackSpy = sinon.spy(document, 'onVersionMismatchCallback');
-
-        document.update(updateData);
-      });
-
-      afterEach(() => {
-        documentOnVersionMismatchCallbackSpy.restore();
-      });
-
-      it('should do nothing', () => {
-        expect(databaseStoreStepsSpy.notCalled).to.be.true;
-        expect(databaseStoreDocSpy.notCalled).to.be.true;
-      });
-
-      it('should call onVersionMismatchCallback callback', () => {
-        expect(documentOnVersionMismatchCallbackSpy.calledOnce).to.be.true;
-      });
-
-      it('should unlock database', () => {
-        expect(databaseStoreLockedSpy.secondCall.calledWith(false)).to.be.true;
+    describe('- if database is locked', () => {
+      it('should not throw error', (done) => {
+        document.database.lock()
+          .then(() => document.updateDoc(updateData))
+          .then(() => {
+            done();
+          });
       });
     });
 
-    it('should apply new steps to document', () => {
-      const documentApplyStepsToDocumentSpy = sinon.spy(document, 'applyStepsToDocument');
+    describe('- if versions don\'t match', () => {
+      it('should call onVersionMismatchCallback with steps from the given version', (done) => {
+        const onVersionMismatchCallbackSpy = sinon.spy(document, 'onVersionMismatchCallback');
 
-      document.update(updateData);
+        document.updateDoc({
+          ...updateData,
+          version: 1,
+        })
+          .then(() => {
+            expect(onVersionMismatchCallbackSpy.calledOnceWithExactly({
+              version: 1,
+              steps: storedSteps.filter((step) => step.version > 1),
+            })).to.be.true;
+          })
+          .finally(() => {
+            onVersionMismatchCallbackSpy.restore();
+            done();
+          });
+      });
 
-      expect(documentApplyStepsToDocumentSpy.calledOnceWithExactly({
-        version: 21,
-        steps: updateData.steps,
-      })).to.be.true;
+      it('should not update the document', (done) => {
+        const databaseStoreSpy = sinon.spy(document.database, 'store');
 
-      documentApplyStepsToDocumentSpy.restore();
+        document.updateDoc({
+          ...updateData,
+          version: 1,
+        })
+          .then(() => {
+            expect(databaseStoreSpy.neverCalledWith('doc')).to.be.true;
+          })
+          .finally(() => {
+            databaseStoreSpy.restore();
+            done();
+          });
+      });
+
+      it('should not update the steps', (done) => {
+        const databaseStoreSpy = sinon.spy(document.database, 'store');
+
+        document.updateDoc({
+          ...updateData,
+          version: 1,
+        })
+          .then(() => {
+            expect(databaseStoreSpy.neverCalledWith('steps')).to.be.true;
+          })
+          .finally(() => {
+            databaseStoreSpy.restore();
+            done();
+          });
+      });
+
+      it('should lock the database during operation', (done) => {
+        document.updateDoc({
+          ...updateData,
+          version: 1,
+        })
+          .then(() => {
+            expect(databaseLockSpy.calledBefore(databaseGetStub)).to.be.true;
+            expect(databaseUnlockSpy.calledAfter(databaseGetStub)).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
     });
 
-    it('should store new steps', () => {
-      const documentStoreStepsSpy = sinon.spy(document, 'storeSteps');
+    describe('- if versions do match', () => {
+      it('should apply steps to document', (done) => {
+        const databaseStoreSpy = sinon.spy(document.database, 'store');
 
-      document.update(updateData);
+        document.updateDoc(updateData)
+          .then(() => {
+            expect(databaseStoreSpy.calledWith('doc', updatedDocument)).to.be.true;
+          })
+          .finally(() => {
+            databaseStoreSpy.restore();
+            done();
+          });
+      });
 
-      expect(documentStoreStepsSpy.calledOnceWithExactly({
-        version: 20,
-        steps: updateData.steps,
-        clientID: updateData.clientID,
-      })).to.be.true;
+      it('should update the steps', (done) => {
+        const databaseStoreSpy = sinon.spy(document.database, 'store');
 
-      documentStoreStepsSpy.restore();
-    });
+        document.updateDoc(updateData)
+          .then(() => {
+            expect(databaseStoreSpy.calledWith('steps', [
+              ...storedSteps,
+              ...updateData.steps.map((step, index) => ({
+                step: JSON.parse(JSON.stringify(step)),
+                version: updateData.version + index + 1,
+                clientID: updateData.clientID,
+              })),
+            ])).to.be.true;
+          })
+          .finally(() => {
+            databaseStoreSpy.restore();
+            done();
+          });
+      });
 
-    it('should call onNewVersionCallback callback', () => {
-      const documentOnNewVersionSpy = sinon.spy(document, 'onNewVersionCallback');
+      it('should update the steps and remove old steps from database', (done) => {
+        const databaseStoreSpy = sinon.spy(document.database, 'store');
 
-      document.update(updateData);
+        document.maxStoredSteps = 1;
 
-      expect(documentOnNewVersionSpy.calledOnce).to.be.true;
+        document.updateDoc(updateData)
+          .then(() => {
+            expect(databaseStoreSpy.calledWith('steps', [
+              storedSteps[2],
+              ...updateData.steps.map((step, index) => ({
+                step: JSON.parse(JSON.stringify(step)),
+                version: updateData.version + index + 1,
+                clientID: updateData.clientID,
+              })),
+            ])).to.be.true;
+          })
+          .finally(() => {
+            databaseStoreSpy.restore();
+            done();
+          });
+      });
 
-      documentOnNewVersionSpy.restore();
-    });
+      it('should call onNewVersionCallback with new version and new steps', (done) => {
+        const onNewVersionCallbackSpy = sinon.spy(document, 'onNewVersionCallback');
 
-    it('should unlock database', () => {
-      document.update(updateData);
+        document.updateDoc(updateData)
+          .then(() => {
+            expect(onNewVersionCallbackSpy.calledOnceWithExactly({
+              version: updateData.version + updateData.steps.length,
+              steps: updateData.steps.map((step, index) => ({
+                step: JSON.parse(JSON.stringify(step)),
+                version: updateData.version + index + 1,
+                clientID: updateData.clientID,
+              })),
+            })).to.be.true;
+          })
+          .finally(() => {
+            onNewVersionCallbackSpy.restore();
+            done();
+          });
+      });
 
-      expect(databaseStoreLockedSpy.secondCall.calledWith(false)).to.be.true;
-      expect(databaseStoreLockedSpy.calledAfter(databaseStoreStepsSpy)).to.be.true;
-      expect(databaseStoreLockedSpy.calledAfter(databaseStoreDocSpy)).to.be.true;
+      it('should lock the database during operation', (done) => {
+        const databaseStoreSpy = sinon.spy(document.database, 'store');
+        document.updateDoc(updateData)
+          .then(() => {
+            expect(databaseLockSpy.calledBefore(databaseGetStub)).to.be.true;
+            expect(databaseLockSpy.calledBefore(databaseStoreSpy)).to.be.true;
+            expect(databaseUnlockSpy.calledAfter(databaseStoreSpy)).to.be.true;
+            expect(databaseUnlockSpy.calledAfter(databaseGetStub)).to.be.true;
+          })
+          .finally(() => {
+            databaseStoreSpy.restore();
+            done();
+          });
+      });
     });
   });
 
-  describe('# applyStepsToDocument', () => {
-    it('should store updated doc and version in database', () => {
-      const databaseStoreDocSpy = sinon.spy(document.database, 'storeDoc');
-      const databaseGetDocStub = sinon.stub(document.database, 'getDoc');
-      databaseGetDocStub.returns(storedData);
+  describe('# getSelections', () => {
+    it('should return an empty array if no selection exist', (done) => {
+      document.getSelections()
+        .then((data) => {
+          expect(data).to.be.eql([]);
+        })
+        .finally(() => {
+          done();
+        });
+    });
 
-      document.applyStepsToDocument({
-        version: 21,
-        steps: updateData.steps,
-      });
+    it('should return selections as an array if some selections exist', (done) => {
+      const databaseGetStub = sinon.stub(document.database, 'get');
+      databaseGetStub.withArgs('sel').resolves(storedSelections);
 
-      expect(databaseStoreDocSpy.calledOnce).to.be.true;
+      document.getSelections()
+        .then((data) => {
+          expect(data).to.be.eql(Object.values(storedSelections));
+        })
+        .finally(() => {
+          databaseGetStub.restore();
+          done();
+        });
+    });
 
-      databaseStoreDocSpy.restore();
-      databaseGetDocStub.restore();
+    it('should lock the database during operation', (done) => {
+      const databaseGetSpy = sinon.spy(document.database, 'get');
+
+      document.getSelections()
+        .then(() => {
+          expect(databaseLockSpy.calledBefore(databaseGetSpy)).to.be.true;
+          expect(databaseUnlockSpy.calledAfter(databaseGetSpy)).to.be.true;
+        })
+        .finally(() => {
+          databaseGetSpy.restore();
+          done();
+        });
     });
   });
 
-  describe('# storeSteps', () => {
-    it('should store formated new steps', () => {
-      const databaseStoreStepsSpy = sinon.spy(document.database, 'storeSteps');
+  describe('# updateSelection', () => {
+    let databaseGetStub;
+    let databaseStoreSpy;
 
-      document.storeSteps({
-        version: 20,
-        steps: updateData.steps,
-        clientID: '820185065',
+    beforeEach(() => {
+      databaseGetStub = sinon.stub(document.database, 'get');
+      databaseGetStub.withArgs('sel').resolves(storedSelections);
+      databaseStoreSpy = sinon.spy(document.database, 'store');
+    });
+
+    afterEach(() => {
+      databaseStoreSpy.restore();
+      databaseGetStub.restore();
+    });
+
+    describe('- if database is locked', () => {
+      it('should not throw error', (done) => {
+        document.database.lock()
+          .then(() => document.updateSelection({ clientID: 'newClient', selection: { from: 1, to: 2 } }, 'newSocket'))
+          .then(() => {
+            done();
+          });
+      });
+    });
+
+    describe('- if client not already in the list', () => {
+      it('should add selection to list', (done) => {
+        document.updateSelection({ clientID: 'newClient', selection: { from: 1, to: 2 } }, 'newSocket')
+          .then(() => {
+            expect(databaseStoreSpy.calledOnceWithExactly('sel', {
+              ...storedSelections,
+              newSocket: {
+                clientID: 'newClient',
+                selection: {
+                  from: 1,
+                  to: 2,
+                },
+              },
+            })).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
       });
 
-      expect(databaseStoreStepsSpy.calledOnceWithExactly(
-        updateData.steps.map((step, index) => ({
-          step: JSON.parse(JSON.stringify(step)),
-          version: 20 + index + 1,
-          clientID: '820185065',
-        })),
-      )).to.be.true;
+      it('should call onSelectionsUpdatedCallback with updated selections', (done) => {
+        const onSelectionsUpdatedCallbackSpy = sinon.spy(document, 'onSelectionsUpdatedCallback');
 
-      databaseStoreStepsSpy.restore();
+        document.updateSelection({ clientID: 'newClient', selection: { from: 1, to: 2 } }, 'newSocket')
+          .then(() => {
+            expect(onSelectionsUpdatedCallbackSpy.calledOnceWithExactly(Object.values({
+              ...storedSelections,
+              newSocket: {
+                clientID: 'newClient',
+                selection: {
+                  from: 1,
+                  to: 2,
+                },
+              },
+            }))).to.be.true;
+          })
+          .finally(() => {
+            onSelectionsUpdatedCallbackSpy.restore();
+            done();
+          });
+      });
+
+      it('should lock the database during operation', (done) => {
+        document.updateSelection({ clientID: 'newClient', selection: { from: 1, to: 2 } }, 'newSocket')
+          .then(() => {
+            expect(databaseLockSpy.calledBefore(databaseGetStub)).to.be.true;
+            expect(databaseLockSpy.calledBefore(databaseStoreSpy)).to.be.true;
+            expect(databaseUnlockSpy.calledAfter(databaseGetStub)).to.be.true;
+            expect(databaseUnlockSpy.calledAfter(databaseStoreSpy)).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+    });
+
+    describe('- if client already in the list and selection did change', () => {
+      it('should update selection of client in the list', (done) => {
+        document.updateSelection({ ...storedSelections['socket-a'], selection: { from: 1, to: 2 } }, 'socket-a')
+          .then(() => {
+            expect(databaseStoreSpy.calledOnceWithExactly('sel', {
+              ...storedSelections,
+              'socket-a': {
+                clientID: 'client-1',
+                selection: {
+                  from: 1,
+                  to: 2,
+                },
+              },
+            })).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+
+      it('should call onSelectionsUpdatedCallback with updated selections', (done) => {
+        const onSelectionsUpdatedCallbackSpy = sinon.spy(document, 'onSelectionsUpdatedCallback');
+
+        document.updateSelection({ ...storedSelections['socket-a'], selection: { from: 1, to: 2 } }, 'socket-a')
+          .then(() => {
+            expect(onSelectionsUpdatedCallbackSpy.calledOnceWithExactly(Object.values({
+              ...storedSelections,
+              'socket-a': {
+                clientID: 'client-1',
+                selection: {
+                  from: 1,
+                  to: 2,
+                },
+              },
+            }))).to.be.true;
+          })
+          .finally(() => {
+            onSelectionsUpdatedCallbackSpy.restore();
+            done();
+          });
+      });
+
+      it('should lock the database during operation', (done) => {
+        document.updateSelection({ ...storedSelections['socket-a'], selection: { from: 1, to: 2 } }, 'socket-a')
+          .then(() => {
+            expect(databaseLockSpy.calledBefore(databaseGetStub)).to.be.true;
+            expect(databaseLockSpy.calledBefore(databaseStoreSpy)).to.be.true;
+            expect(databaseUnlockSpy.calledAfter(databaseGetStub)).to.be.true;
+            expect(databaseUnlockSpy.calledAfter(databaseStoreSpy)).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+    });
+
+    describe('- if client already in the list but selection did not change', () => {
+      it('should not update selection of client in the list', (done) => {
+        document.updateSelection(storedSelections['socket-a'], 'socket-a')
+          .then(() => {
+            expect(databaseStoreSpy.neverCalledWith('sel')).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+
+      it('should not call onSelectionsUpdatedCallback', (done) => {
+        const onSelectionsUpdatedCallbackSpy = sinon.spy(document, 'onSelectionsUpdatedCallback');
+
+        document.updateSelection(storedSelections['socket-a'], 'socket-a')
+          .then(() => {
+            expect(onSelectionsUpdatedCallbackSpy.notCalled).to.be.true;
+          })
+          .finally(() => {
+            onSelectionsUpdatedCallbackSpy.restore();
+            done();
+          });
+      });
+
+      it('should lock the database during operation', (done) => {
+        document.updateSelection(storedSelections['socket-a'], 'socket-a')
+          .then(() => {
+            expect(databaseLockSpy.calledBefore(databaseGetStub)).to.be.true;
+            expect(databaseUnlockSpy.calledAfter(databaseGetStub)).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
     });
   });
 
-  describe('# deleteDatabase', () => {
-    it('should call database.deleteFiles', () => {
-      const databaseDeleteFilesSpy = sinon.spy(document.database, 'deleteFiles');
+  describe('# removeSelection', () => {
+    let databaseGetStub;
+    let databaseStoreSpy;
 
-      document.deleteDatabase();
+    beforeEach(() => {
+      databaseGetStub = sinon.stub(document.database, 'get');
+      databaseGetStub.withArgs('sel').resolves(storedSelections);
+      databaseStoreSpy = sinon.spy(document.database, 'store');
+    });
 
-      expect(databaseDeleteFilesSpy.calledOnce);
+    afterEach(() => {
+      databaseStoreSpy.restore();
+      databaseGetStub.restore();
+    });
 
-      databaseDeleteFilesSpy.restore();
+    describe('- if client is in the list', () => {
+      it('should delete client from the list', (done) => {
+        document.removeSelection('socket-a')
+          .then(() => {
+            const { 'socket-a': deleted, ...newSelections } = storedSelections;
+            expect(databaseStoreSpy.calledOnceWithExactly('sel', newSelections)).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+
+      it('should call onSelectionsUpdatedCallback with updated selections', (done) => {
+        const onSelectionsUpdatedCallbackSpy = sinon.spy(document, 'onSelectionsUpdatedCallback');
+
+        document.removeSelection('socket-a')
+          .then(() => {
+            const { 'socket-a': deleted, ...newSelections } = storedSelections;
+            expect(
+              onSelectionsUpdatedCallbackSpy.calledOnceWithExactly(Object.values(newSelections)),
+            ).to.be.true;
+          })
+          .finally(() => {
+            onSelectionsUpdatedCallbackSpy.restore();
+            done();
+          });
+      });
+
+      it('should lock the database during operation', (done) => {
+        document.removeSelection('socket-a')
+          .then(() => {
+            expect(databaseLockSpy.calledBefore(databaseGetStub)).to.be.true;
+            expect(databaseLockSpy.calledBefore(databaseStoreSpy)).to.be.true;
+            expect(databaseUnlockSpy.calledAfter(databaseGetStub)).to.be.true;
+            expect(databaseUnlockSpy.calledAfter(databaseStoreSpy)).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+    });
+
+    describe('- if client is not in the list', () => {
+      it('should not change the list', (done) => {
+        document.removeSelection('fakeSocket')
+          .then(() => {
+            expect(databaseStoreSpy.neverCalledWith('sel')).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+
+      it('should not call onSelectionsUpdatedCallback', (done) => {
+        const onSelectionsUpdatedCallbackSpy = sinon.spy(document, 'onSelectionsUpdatedCallback');
+
+        document.removeSelection('fakeSocket')
+          .then(() => {
+            expect(onSelectionsUpdatedCallbackSpy.notCalled).to.be.true;
+          })
+          .finally(() => {
+            onSelectionsUpdatedCallbackSpy.restore();
+            done();
+          });
+      });
+
+      it('should lock the database during operation', (done) => {
+        document.removeSelection('fakeSocket')
+          .then(() => {
+            expect(databaseLockSpy.calledBefore(databaseGetStub)).to.be.true;
+            expect(databaseUnlockSpy.calledAfter(databaseGetStub)).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+    });
+  });
+
+  describe('# getClients', () => {
+    it('should return an empty array if no clients exist', (done) => {
+      document.getClients()
+        .then((data) => {
+          expect(data).to.be.eql([]);
+        })
+        .finally(() => {
+          done();
+        });
+    });
+
+    it('should return clients as an array if some clients exist', (done) => {
+      const databaseGetStub = sinon.stub(document.database, 'get');
+      databaseGetStub.withArgs('clients').resolves(storedClients);
+
+      document.getClients()
+        .then((data) => {
+          expect(data).to.be.eql(Object.values(storedClients));
+        })
+        .finally(() => {
+          databaseGetStub.restore();
+          done();
+        });
+    });
+
+    it('should lock the database during operation', (done) => {
+      const databaseGetSpy = sinon.spy(document.database, 'get');
+
+      document.getClients()
+        .then(() => {
+          expect(databaseLockSpy.calledBefore(databaseGetSpy)).to.be.true;
+          expect(databaseUnlockSpy.calledAfter(databaseGetSpy)).to.be.true;
+        })
+        .finally(() => {
+          databaseGetSpy.restore();
+          done();
+        });
+    });
+  });
+
+  describe('# addClient', () => {
+    let databaseGetStub;
+    let databaseStoreSpy;
+
+    beforeEach(() => {
+      databaseGetStub = sinon.stub(document.database, 'get');
+      databaseGetStub.withArgs('clients').resolves(storedClients);
+      databaseStoreSpy = sinon.spy(document.database, 'store');
+    });
+
+    afterEach(() => {
+      databaseStoreSpy.restore();
+      databaseGetStub.restore();
+    });
+
+    describe('- if client is not already in the list', () => {
+      it('should add client to list', (done) => {
+        document.addClient('newClient', 'newSocket')
+          .then(() => {
+            expect(databaseStoreSpy.calledOnceWithExactly('clients', {
+              ...storedClients,
+              newSocket: 'newClient',
+            })).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+
+      it('should call onClientsUpdatedCallback with all clients', (done) => {
+        const onClientsUpdatedCallbackSpy = sinon.spy(document, 'onClientsUpdatedCallback');
+
+        document.addClient('newClient', 'newSocket')
+          .then(() => {
+            expect(onClientsUpdatedCallbackSpy.calledOnceWithExactly(Object.values({
+              ...storedClients,
+              newSocket: 'newClient',
+            }))).to.be.true;
+          })
+          .finally(() => {
+            onClientsUpdatedCallbackSpy.restore();
+            done();
+          });
+      });
+
+      it('should lock the database during operation', (done) => {
+        document.addClient('newClient', 'newSocket')
+          .then(() => {
+            expect(databaseLockSpy.calledBefore(databaseGetStub)).to.be.true;
+            expect(databaseLockSpy.calledBefore(databaseStoreSpy)).to.be.true;
+            expect(databaseUnlockSpy.calledAfter(databaseGetStub)).to.be.true;
+            expect(databaseUnlockSpy.calledAfter(databaseStoreSpy)).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+    });
+
+    describe('- if client is already in the list', () => {
+      it('should not update clients list', (done) => {
+        document.addClient('client-1', 'socket-a')
+          .then(() => {
+            expect(databaseStoreSpy.neverCalledWith('clients')).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+
+      it('should not call onClientsUpdatedCallback', (done) => {
+        const onClientsUpdatedCallbackSpy = sinon.spy(document, 'onClientsUpdatedCallback');
+
+        document.addClient('client-1', 'socket-a')
+          .then(() => {
+            expect(onClientsUpdatedCallbackSpy.notCalled).to.be.true;
+          })
+          .finally(() => {
+            onClientsUpdatedCallbackSpy.restore();
+            done();
+          });
+      });
+
+      it('should lock the database during operation', (done) => {
+        document.addClient('client-1', 'socket-a')
+          .then(() => {
+            expect(databaseLockSpy.calledBefore(databaseGetStub)).to.be.true;
+            expect(databaseUnlockSpy.calledAfter(databaseGetStub)).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+    });
+  });
+
+  describe('# removeClient', () => {
+    let databaseGetStub;
+    let databaseStoreSpy;
+
+    beforeEach(() => {
+      databaseGetStub = sinon.stub(document.database, 'get');
+      databaseGetStub.withArgs('clients').resolves(storedClients);
+      databaseStoreSpy = sinon.spy(document.database, 'store');
+    });
+
+    afterEach(() => {
+      databaseStoreSpy.restore();
+      databaseGetStub.restore();
+    });
+
+    describe('- if client is in the list', () => {
+      it('should delete client from the list', (done) => {
+        document.removeClient('socket-a')
+          .then(() => {
+            const { 'socket-a': deleted, ...newClients } = storedClients;
+            expect(databaseStoreSpy.calledOnceWithExactly('clients', newClients)).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+
+      it('should call onClientsUpdatedCallback with all clients', (done) => {
+        const onClientsUpdatedCallbackSpy = sinon.spy(document, 'onClientsUpdatedCallback');
+
+        document.removeClient('socket-a')
+          .then(() => {
+            const { 'socket-a': deleted, ...newClients } = storedClients;
+            expect(
+              onClientsUpdatedCallbackSpy.calledOnceWithExactly(Object.values(newClients)),
+            ).to.be.true;
+          })
+          .finally(() => {
+            onClientsUpdatedCallbackSpy.restore();
+            done();
+          });
+      });
+
+      it('should lock the database during operation', (done) => {
+        document.removeClient('socket-a')
+          .then(() => {
+            expect(databaseLockSpy.calledBefore(databaseGetStub)).to.be.true;
+            expect(databaseLockSpy.calledBefore(databaseStoreSpy)).to.be.true;
+            expect(databaseUnlockSpy.calledAfter(databaseGetStub)).to.be.true;
+            expect(databaseUnlockSpy.calledAfter(databaseStoreSpy)).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+
+      describe('- if client is not in the list', () => {
+        it('should not change the list', (done) => {
+          document.removeClient('fakeSocket')
+            .then(() => {
+              expect(databaseStoreSpy.neverCalledWith('clients')).to.be.true;
+            })
+            .finally(() => {
+              done();
+            });
+        });
+
+        it('should not call onClientsUpdatedCallback', (done) => {
+          const onClientsUpdatedCallbackSpy = sinon.spy(document, 'onClientsUpdatedCallback');
+
+          document.removeClient('fakeSocket')
+            .then(() => {
+              expect(onClientsUpdatedCallbackSpy.notCalled).to.be.true;
+            })
+            .finally(() => {
+              onClientsUpdatedCallbackSpy.restore();
+              done();
+            });
+        });
+
+        it('should lock the database during operation', (done) => {
+          document.removeClient('fakeSocket')
+            .then(() => {
+              expect(databaseLockSpy.calledBefore(databaseGetStub)).to.be.true;
+              expect(databaseUnlockSpy.calledAfter(databaseGetStub)).to.be.true;
+            })
+            .finally(() => {
+              done();
+            });
+        });
+      });
+    });
+  });
+
+  describe('# cleanUpClientsAndSelections', () => {
+    let databaseGetStub;
+    let databaseStoreSpy;
+
+    beforeEach(() => {
+      databaseGetStub = sinon.stub(document.database, 'get');
+      databaseGetStub.withArgs('clients').resolves(storedClients);
+      databaseGetStub.withArgs('sel').resolves(storedSelections);
+      databaseStoreSpy = sinon.spy(document.database, 'store');
+    });
+
+    afterEach(() => {
+      databaseStoreSpy.restore();
+      databaseGetStub.restore();
+    });
+
+    it('should not delete any client if they are all linked to a socket in the given list', (done) => {
+      const socketIDs = ['socket-a', 'socket-b'];
+      document.cleanUpClientsAndSelections(socketIDs)
+        .then(() => {
+          expect(databaseStoreSpy.neverCalledWith('clients')).to.be.true;
+        })
+        .finally(() => {
+          done();
+        });
+    });
+
+    it('should delete clients not linked to a socket in the given list', (done) => {
+      const socketIDs = ['socket-a'];
+      document.cleanUpClientsAndSelections(socketIDs)
+        .then(() => {
+          const newClients = Object.keys(storedClients)
+            .filter((key) => socketIDs.includes(key))
+            .reduce((filteredClients, key) => ({
+              ...filteredClients,
+              [key]: storedClients[key],
+            }), {});
+          expect(databaseStoreSpy.calledWithExactly('clients', newClients)).to.be.true;
+        })
+        .finally(() => {
+          done();
+        });
+    });
+
+    it('should not delete any selection if they are all linked to a socket in the given list', (done) => {
+      const socketIDs = ['socket-a', 'socket-b'];
+      document.cleanUpClientsAndSelections(socketIDs)
+        .then(() => {
+          expect(databaseStoreSpy.neverCalledWith('sel')).to.be.true;
+        })
+        .finally(() => {
+          done();
+        });
+    });
+
+    it('should delete selections not linked to a socket in the given list', (done) => {
+      const socketIDs = ['socket-a'];
+      document.cleanUpClientsAndSelections(socketIDs)
+        .then(() => {
+          const newSelections = Object.keys(storedSelections)
+            .filter((key) => socketIDs.includes(key))
+            .reduce((filteredClients, key) => ({
+              ...filteredClients,
+              [key]: storedSelections[key],
+            }), {});
+          expect(databaseStoreSpy.calledWithExactly('sel', newSelections)).to.be.true;
+        })
+        .finally(() => {
+          done();
+        });
+    });
+
+    it('should lock the database during operation', (done) => {
+      document.cleanUpClientsAndSelections(['socket-a'])
+        .then(() => {
+          expect(databaseLockSpy.calledBefore(databaseGetStub)).to.be.true;
+          expect(databaseLockSpy.calledBefore(databaseStoreSpy)).to.be.true;
+          expect(databaseUnlockSpy.calledAfter(databaseGetStub)).to.be.true;
+          expect(databaseUnlockSpy.calledAfter(databaseStoreSpy)).to.be.true;
+        })
+        .finally(() => {
+          done();
+        });
     });
   });
 
@@ -361,212 +1164,23 @@ describe('Document', () => {
     });
   });
 
-  describe('# updateSelection', () => {
-    it('should add selection of client to list and return true if not in the list', () => {
-      const updateSelectionSpy = sinon.spy(document, 'updateSelection');
-      document.selections = {
-        'socket-A': {
-          clientID: 'client-A',
-          selection: {
-            from: 5,
-            to: 5,
-          },
-        },
-      };
+  describe('# onSelectionsUpdated', () => {
+    it('should assign argument to onSelectionsUpdatedCallback', () => {
+      const callback = () => 'some callback function result';
 
-      document.updateSelection({
-        clientID: 'client-1',
-        selection: {
-          from: 5,
-          to: 5,
-        },
-      }, 'socket-1');
+      document.onSelectionsUpdated(callback);
 
-      expect(document.selections['socket-1']).to.eql({
-        clientID: 'client-1',
-        selection: {
-          from: 5,
-          to: 5,
-        },
-      });
-      expect(updateSelectionSpy.returned(true)).to.be.true;
-    });
-
-    it('should update selection of client and return true if different', () => {
-      const updateSelectionSpy = sinon.spy(document, 'updateSelection');
-      document.selections = {
-        'socket-1': {
-          clientID: 'client-1',
-          selection: {
-            from: 1,
-            to: 5,
-          },
-        },
-      };
-
-      document.updateSelection({
-        clientID: 'client-1',
-        selection: {
-          from: 5,
-          to: 5,
-        },
-      }, 'socket-1');
-
-      expect(document.selections['socket-1']).to.eql({
-        clientID: 'client-1',
-        selection: {
-          from: 5,
-          to: 5,
-        },
-      });
-      expect(updateSelectionSpy.returned(true)).to.be.true;
-    });
-
-    it('should not update selection of client and return false if not different', () => {
-      const updateSelectionSpy = sinon.spy(document, 'updateSelection');
-      document.selections = {
-        'socket-1': {
-          clientID: 'client-1',
-          selection: {
-            from: 5,
-            to: 5,
-          },
-        },
-      };
-
-      document.updateSelection({
-        clientID: 'client-1',
-        selection: {
-          from: 5,
-          to: 5,
-        },
-      }, 'socket-1');
-
-      expect(document.selections['socket-1']).to.eql({
-        clientID: 'client-1',
-        selection: {
-          from: 5,
-          to: 5,
-        },
-      });
-      expect(updateSelectionSpy.returned(false)).to.be.true;
+      expect(document.onSelectionsUpdatedCallback()).to.equal('some callback function result');
     });
   });
 
-  describe('# removeSelection', () => {
-    it('should remove socket entry from selections list', () => {
-      document.selections = {
-        'socket-1': {
-          clientID: 'client-1',
-          selection: {
-            from: 5,
-            to: 5,
-          },
-        },
-        'socket-2': {
-          clientID: 'client-2',
-          selection: {
-            from: 2,
-            to: 3,
-          },
-        },
-      };
+  describe('# onClientsUpdated', () => {
+    it('should assign argument to onClientsUpdatedCallback', () => {
+      const callback = () => 'some callback function result';
 
-      document.removeSelection('socket-1');
+      document.onClientsUpdated(callback);
 
-      expect(document.selections).to.eql({
-        'socket-2': {
-          clientID: 'client-2',
-          selection: {
-            from: 2,
-            to: 3,
-          },
-        },
-      });
-    });
-  });
-
-  describe('# getSelections', () => {
-    it('should return selections list as an array', () => {
-      document.selections = {
-        'socket-1': {
-          clientID: 'client-1',
-          selection: {
-            from: 5,
-            to: 5,
-          },
-        },
-        'socket-2': {
-          clientID: 'client-2',
-          selection: {
-            from: 2,
-            to: 3,
-          },
-        },
-      };
-
-      expect(document.getSelections()).to.eql([
-        {
-          clientID: 'client-1',
-          selection: {
-            from: 5,
-            to: 5,
-          },
-        },
-        {
-          clientID: 'client-2',
-          selection: {
-            from: 2,
-            to: 3,
-          },
-        },
-      ]);
-    });
-  });
-
-  describe('# addClient', () => {
-    it('should add client to list', () => {
-      document.clients = {
-        'socket-a': 'client-a',
-        'socket-b': 'client-b',
-      };
-
-      document.addClient('client-1', 'socket-1');
-
-      expect(document.clients).to.eql({
-        'socket-a': 'client-a',
-        'socket-b': 'client-b',
-        'socket-1': 'client-1',
-      });
-    });
-  });
-
-  describe('# removeClient', () => {
-    it('should remove client associated to socketID from list', () => {
-      document.clients = {
-        'socket-a': 'client-a',
-        'socket-b': 'client-b',
-      };
-
-      document.removeClient('socket-a');
-
-      expect(document.clients).to.eql({
-        'socket-b': 'client-b',
-      });
-    });
-  });
-
-  describe('# getClients', () => {
-    it('should return clients list as an array', () => {
-      document.clients = {
-        'socket-a': 'client-1',
-        'socket-b': 'client-2',
-      };
-
-      expect(document.getClients()).to.eql([
-        'client-1',
-        'client-2',
-      ]);
+      expect(document.onClientsUpdatedCallback()).to.equal('some callback function result');
     });
   });
 });

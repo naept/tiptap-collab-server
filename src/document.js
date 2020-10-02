@@ -1,95 +1,248 @@
 import { Step } from 'prosemirror-transform';
 import schema from './schema';
 import Database from './database';
+import VersionMismatchError from './errors/versionMismatchError';
+
+const defaultData = {
+  version: 0,
+  doc: { type: 'doc', content: [{ type: 'paragraph' }] },
+};
 
 export default class Document {
   constructor(namespaceDir, roomName, maxStoredSteps = 1000) {
-    this.id = `${namespaceDir}/${roomName}`;
-    this.selections = {};
-    this.clients = {};
-    this.database = new Database(namespaceDir, roomName, maxStoredSteps);
+    this.namespaceDir = namespaceDir;
+    this.roomName = roomName;
+    this.maxStoredSteps = maxStoredSteps;
+    this.database = new Database(namespaceDir, roomName);
 
     this.onVersionMismatchCallback = () => {};
     this.onNewVersionCallback = () => {};
+    this.onSelectionsUpdatedCallback = () => {};
+    this.onClientsUpdatedCallback = () => {};
   }
 
-  reset(doc) {
-    this.database.storeDoc({
-      version: 0,
-      doc,
-    });
+  initDoc(processingPromise) {
+    let returnData;
+    return this.database.lock()
+      .then(() => this.database.get('doc', defaultData))
+      .then((data) => processingPromise(data))
+      .then(({ version, doc }) => {
+        returnData = { version, doc };
+        return this.database.store('doc', {
+          version,
+          doc,
+        });
+      })
+      .then(() => returnData)
+      .finally(() => this.database.unlock());
   }
 
   getDoc() {
-    return this.database.getDoc();
+    return this.database.lock()
+      .then(() => this.database.get('doc', defaultData))
+      .finally(() => this.database.unlock());
   }
 
-  getStepsAfterVersion(version) {
-    return this.database.getSteps().filter((step) => step.version > version);
-  }
+  updateDoc({ version, clientID, steps }) {
+    let currentDoc;
+    let currentSteps;
+    let newSteps;
+    return this.database.lock()
+      .then(() => this.database.get('steps', []))
+      .then((data) => {
+        currentSteps = data;
+        return this.database.get('doc', defaultData);
+      })
+      .then((data) => {
+        if (data.version !== version) {
+          throw new VersionMismatchError();
+        }
+        currentDoc = data;
 
-  update({ version, clientID, steps }) {
-    // we need to check if there is another update processed
-    // so we store a "locked" state
-    const locked = this.database.getLocked();
-
-    // If locked, we will do nothing and wait for another client update
-    if (!locked) {
-      this.database.storeLocked(true);
-
-      const storedData = this.database.getDoc();
-
-      if (storedData.version !== version) {
-        this.onVersionMismatchCallback({
-          version,
-          steps: this.getStepsAfterVersion(version),
+        let doc = schema.nodeFromJSON(currentDoc.doc);
+        // Apply steps to document
+        steps.forEach((step) => {
+          const result = Step.fromJSON(schema, step).apply(doc);
+          doc = result.doc;
         });
-      } else {
-        // calculating a new version number is easy
-        const newVersion = version + steps.length;
-
-        this.applyStepsToDocument({ version: newVersion, steps });
-
-        this.storeSteps({ version, steps, clientID });
-
+        return this.database.store('doc', {
+          version: version + steps.length,
+          doc: JSON.parse(JSON.stringify(doc)),
+        });
+      })
+      .then(() => {
+        newSteps = steps.map((step, index) => ({
+          step: JSON.parse(JSON.stringify(step)),
+          version: version + index + 1,
+          clientID,
+        }));
+        return this.database.store('steps', [
+          ...currentSteps.slice(Math.max(0, currentSteps.length - this.maxStoredSteps)),
+          ...newSteps,
+        ]);
+      })
+      .then(() => {
         this.onNewVersionCallback({
-          version: newVersion,
-          steps: this.getStepsAfterVersion(version),
+          version: version + steps.length,
+          steps: newSteps,
         });
-      }
-
-      this.database.storeLocked(false);
-    }
+      })
+      .catch((e) => {
+        if (e.name === 'VersionMismatchError') {
+          this.onVersionMismatchCallback({
+            version,
+            steps: currentSteps.filter((step) => step.version > version),
+          });
+        } else if (e.name !== 'LockError') throw e;
+      })
+      .finally(() => this.database.unlock());
   }
 
-  applyStepsToDocument({ version, steps }) {
-    const storedData = this.database.getDoc();
-    let doc = schema.nodeFromJSON(storedData.doc);
-    // Apply steps to document
-    steps.forEach((step) => {
-      const result = Step.fromJSON(schema, step).apply(doc);
-      doc = result.doc;
-    });
-
-    // Store updated document
-    this.database.storeDoc({ version, doc });
+  getSelections() {
+    return this.database.lock()
+      .then(() => this.database.get('sel', {}))
+      .then((selections) => Object.values(selections))
+      .finally(() => this.database.unlock());
   }
 
-  storeSteps({ version, steps, clientID }) {
-    // Format new steps for storage
-    const newSteps = steps
-      .map((step, index) => ({
-        step: JSON.parse(JSON.stringify(step)),
-        version: version + index + 1,
-        clientID,
-      }));
+  updateSelection({ clientID, selection }, socketID) {
+    return this.database.lock()
+      .then(() => this.database.get('sel', {}))
+      .then((selections) => {
+        if (!selections[socketID]
+          || JSON.stringify(selections[socketID].selection) !== JSON.stringify(selection)) {
+          const newSelections = {
+            ...selections,
+            [socketID]: {
+              clientID,
+              selection,
+            },
+          };
+          return this.database.store('sel', newSelections)
+            .then(() => {
+              this.onSelectionsUpdatedCallback(Object.values(newSelections));
+            });
+        }
+        return new Promise((r) => { r(); });
+      })
+      .catch((e) => {
+        if (e.name !== 'LockError') throw e;
+      })
+      .finally(() => this.database.unlock());
+  }
 
-    // Store new steps
-    this.database.storeSteps(newSteps);
+  removeSelection(socketID) {
+    return this.database.lock()
+      .then(() => this.database.get('sel', {}))
+      .then((selections) => {
+        if (selections[socketID]) {
+          const { [socketID]: deleted, ...newSelections } = selections;
+
+          return this.database.store('sel', newSelections)
+            .then(() => {
+              this.onSelectionsUpdatedCallback(Object.values(newSelections));
+            });
+        }
+        return new Promise((r) => { r(); });
+      })
+      .finally(() => this.database.unlock());
+  }
+
+  getClients() {
+    return this.database.lock()
+      .then(() => this.database.get('clients', {}))
+      .then((clients) => Object.values(clients))
+      .finally(() => this.database.unlock());
+  }
+
+  addClient(clientID, socketID) {
+    return this.database.lock()
+      .then(() => this.database.get('clients', {}))
+      .then((clients) => {
+        if (!clients[socketID]) {
+          const newClients = {
+            ...clients,
+            [socketID]: clientID,
+          };
+
+          return this.database.store('clients', newClients)
+            .then(() => {
+              this.onClientsUpdatedCallback(Object.values(newClients));
+            });
+        }
+        return new Promise((r) => { r(); });
+      })
+      .finally(() => this.database.unlock());
+  }
+
+  removeClient(socketID) {
+    return this.database.lock()
+      .then(() => this.database.get('clients', {}))
+      .then((clients) => {
+        if (clients[socketID]) {
+          const { [socketID]: deleted, ...newClients } = clients;
+
+          return this.database.store('clients', newClients)
+            .then(() => {
+              this.onClientsUpdatedCallback(Object.values(newClients));
+            });
+        }
+        return new Promise((r) => { r(); });
+      })
+      .finally(() => this.database.unlock());
+  }
+
+  cleanUpClientsAndSelections(socketIDs) {
+    return this.database.lock()
+      .then(() => this.database.get('clients', {}))
+      .then((clients) => {
+        const needsCleanUp = Object.keys(clients)
+          .filter((key) => socketIDs.includes(key))
+          .length !== Object.keys(clients).length;
+
+        if (needsCleanUp) {
+          const newClients = Object.keys(clients)
+            .filter((key) => socketIDs.includes(key))
+            .reduce((filteredClients, key) => ({
+              ...filteredClients,
+              [key]: clients[key],
+            }), {});
+
+          return this.database.store('clients', newClients)
+            .then(() => {
+              this.onClientsUpdatedCallback(Object.values(newClients));
+            });
+        }
+        return new Promise((r) => { r(); });
+      })
+      .then(() => this.database.get('sel', {}))
+      .then((selections) => {
+        const needsCleanUp = Object.keys(selections)
+          .filter((key) => socketIDs.includes(key))
+          .length !== Object.keys(selections).length;
+
+        if (needsCleanUp) {
+          const newSelections = Object.keys(selections)
+            .filter((key) => socketIDs.includes(key))
+            .reduce((filteredClients, key) => ({
+              ...filteredClients,
+              [key]: selections[key],
+            }), {});
+
+          return this.database.store('sel', newSelections)
+            .then(() => {
+              this.onClientsUpdatedCallback(Object.values(newSelections));
+            });
+        }
+        return new Promise((r) => { r(); });
+      })
+      .finally(() => this.database.unlock());
   }
 
   deleteDatabase() {
-    this.database.deleteFiles();
+    return this.database.lock()
+      .then(() => this.database.deleteMany(['doc', 'steps', 'sel', 'clients']))
+      .finally(() => this.database.unlock());
   }
 
   onVersionMismatch(callback) {
@@ -102,41 +255,13 @@ export default class Document {
     return this;
   }
 
-  updateSelection({ clientID, selection }, socketID) {
-    if (!this.selections[socketID]
-      || JSON.stringify(this.selections[socketID].selection) !== JSON.stringify(selection)) {
-      this.selections = {
-        ...this.selections,
-        [socketID]: {
-          clientID,
-          selection,
-        },
-      };
-      return true;
-    }
-    return false;
+  onSelectionsUpdated(callback) {
+    this.onSelectionsUpdatedCallback = callback;
+    return this;
   }
 
-  removeSelection(socketID) {
-    delete this.selections[socketID];
-  }
-
-  getSelections() {
-    return Object.values(this.selections);
-  }
-
-  addClient(clientID, socketID) {
-    this.clients = {
-      ...this.clients,
-      [socketID]: clientID,
-    };
-  }
-
-  removeClient(socketID) {
-    delete this.clients[socketID];
-  }
-
-  getClients() {
-    return Object.values(this.clients);
+  onClientsUpdated(callback) {
+    this.onClientsUpdatedCallback = callback;
+    return this;
   }
 }

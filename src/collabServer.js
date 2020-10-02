@@ -8,13 +8,11 @@ export default class CollabServer {
   constructor(options) {
     this.options = options || {};
     this.io = new SocketIO(http);
-    this.documents = [];
 
-    this.beforeConnection((_param, resolve) => { resolve(); });
+    this.connectionGuard((_param, resolve) => { resolve(); });
+    this.initDocument((param, resolve) => { resolve(param); });
     this.onClientConnect((_param, resolve) => { resolve(); });
     this.onClientDisconnect((_param, resolve) => { resolve(); });
-    this.onNewDocument((_param, resolve) => { resolve(); });
-    this.onLeaveDocument((_param, resolve) => { resolve(); });
   }
 
   serve() {
@@ -25,102 +23,170 @@ export default class CollabServer {
     this.namespaces.on('connection', (socket) => {
       const namespace = socket.nsp;
 
-      socket.on('join', async ({ room, clientID, options }) => {
-        this.connectionGuard({
-          socket, room, clientID, options,
-        }).then(async () => {
-          socket.join(room);
+      socket.on('join', ({ roomName, clientID, options }) => {
+        this.connectionGuardCallback({
+          socket, roomName, clientID, options,
+        })
+          .then(() => {
+            socket.join(roomName);
 
-          const document = await this.findOrCreateDocument(namespace.name, room, clientID);
+            const document = new Document(namespace.name, roomName, this.options.maxStoredSteps);
 
-          // send latest document
-          socket.emit('init', document.getDoc());
+            // Document event management
+            document
+              .onVersionMismatch(({ version, steps }) => {
+                // Send to every client in the roomName
+                namespace.in(roomName).emit('update', {
+                  version,
+                  steps,
+                });
+              })
+              .onNewVersion(({ version, steps }) => {
+                // Send to every client in the roomName
+                namespace.in(roomName).emit('update', {
+                  version,
+                  steps,
+                });
+              })
+              .onSelectionsUpdated((selections) => {
+                // Send to every other client in the roomName
+                socket.to(roomName).emit('getSelections', selections);
+              })
+              .onClientsUpdated((clients) => {
+                // Send to every client in the roomName
+                namespace.in(roomName).emit('getClients', clients);
+              });
 
-          // Handle version mismatch:
-          // we send all steps of this version back to the user
-          document.onVersionMismatch(({ version, steps }) => {
-            namespace.in(room).emit('update', {
-              version,
-              steps,
+            // Handle document update
+            socket.on('update', (data) => {
+              document.updateDoc({ ...data, clientID });
             });
-          });
 
-          // Handle new document version
-          // send update to everyone (me and others)
-          document.onNewVersion(({ version, steps }) => {
-            namespace.in(room).emit('update', {
-              version,
-              steps,
+            // Handle update selection
+            socket.on('updateSelection', async (data) => {
+              document.updateSelection({ ...data, clientID }, socket.id);
             });
+
+            // Handle disconnection
+            socket.on('disconnect', async () => {
+              document.removeSelection(socket.id)
+                .then(() => document.removeClient(socket.id))
+                .then(() => this.onClientDisconnectCallback({
+                  clientID,
+                  room: namespace.adapter.rooms[roomName],
+                  document,
+                }));
+            });
+
+            // Init
+            return document.cleanUpClientsAndSelections(
+              Object.keys(namespace.adapter.rooms[roomName].sockets),
+            )
+              .then(() => this.onClientConnectCallback({
+                clientID,
+                room: namespace.adapter.rooms[roomName],
+                document,
+              }))
+              .then(() => document.addClient(clientID, socket.id))
+              .then(() => document.initDoc(
+                ({ version, doc }) => this.initDocumentCallback({
+                  clientID,
+                  room: namespace.adapter.rooms[roomName],
+                  version,
+                  doc,
+                }),
+              ))
+              .then(({ version, doc }) => {
+                socket.emit('init', { version, doc });
+              });
+          })
+          .catch((error) => {
+            socket.emit('initFailed', error);
+            socket.disconnect();
           });
 
-          // Handle update
-          socket.on('update', async (data) => {
-            document.update(data);
-          });
+        // socket.on('join', async ({ roomName, clientID, options }) => {
+        //   this.connectionGuardCallback({
+        //     socket, roomName, clientID, options,
+        //   }).then(async () => {
+        //     socket.join(roomName);
 
-          // Handle update
-          socket.on('updateSelection', async (data) => {
-            if (document.updateSelection(data, socket.id)) {
-              socket.to(room).emit('getSelections', document.getSelections());
-            }
-          });
+        //     const document = await this.findOrCreateDocument(namespace.name, roomName, clientID);
 
-          // Handle disconnect
-          socket.on('disconnect', async () => {
-            document.removeSelection(socket.id);
-            namespace.in(room).emit('getSelections', document.getSelections());
+        //     // send latest document
+        //     socket.emit('init', document.getDoc());
 
-            document.removeClient(socket.id);
-            namespace.in(room).emit('getClients', document.getClients());
+        //     // Handle version mismatch:
+        //     // we send all steps of this version back to the user
+        //     document.onVersionMismatch(({ version, steps }) => {
+        //       namespace.in(roomName).emit('update', {
+        //         version,
+        //         steps,
+        //       });
+        //     });
 
-            await this.onClientDisconnectionCallback({ clientID, document });
+        //     // Handle new document version
+        //     // send update to everyone (me and others)
+        //     document.onNewVersion(({ version, steps }) => {
+        //       namespace.in(roomName).emit('update', {
+        //         version,
+        //         steps,
+        //       });
+        //     });
 
-            if (!namespace.adapter.rooms[room]) {
-              // Nobody is connected to the document anymore so it is deleted
-              // (data is kept in database)
-              await this.removeDocument(document, clientID);
-            }
-          });
+        //     // Handle new selections
+        //     // send update to others only
+        //     document.onNewSelections(({ selections }) => {
+        //       socket.to(roomName).emit('getSelections', selections);
+        //     });
 
-          // Add client to document
-          document.addClient(clientID, socket.id);
-          await this.onClientConnectionCallback({ clientID, document });
+        //     // Handle update
+        //     socket.on('update', async (data) => {
+        //       document.update(data);
+        //     });
 
-          // send client list
-          namespace.in(room).emit('getClients', document.getClients());
+        //     // Handle update
+        //     socket.on('updateSelection', async (data) => {
+        //       document.updateSelection(data, socket.id);
+        //       // if (document.updateSelection(data, socket.id)) {
+        //       //   socket.to(roomName).emit('getSelections', document.getSelections());
+        //       // }
+        //     });
 
-          // send selections
-          namespace.in(room).emit('getSelections', document.getSelections());
-        }).catch((error) => {
-          socket.emit('initFailed', error);
-        });
+        //     // Handle disconnect
+        //     socket.on('disconnect', async () => {
+        //       document.removeSelection(socket.id);
+        //       namespace.in(roomName).emit('getSelections', document.getSelections());
+
+        //       document.removeClient(socket.id);
+        //       namespace.in(roomName).emit('getClients', document.getClients());
+
+        //       await this.onClientDisconnectionCallback({ clientID, document });
+
+        //       if (!namespace.adapter.roomNames[roomName]) {
+        //         // Nobody is connected to the document anymore so it is deleted
+        //         // (data is kept in database)
+        //         await this.removeDocument(document, clientID);
+        //       }
+        //     });
+
+        //     // Add client to document
+        //     document.addClient(clientID, socket.id);
+        //     await this.onClientConnectionCallback({ clientID, document });
+
+        //     // send client list
+        //     namespace.in(roomName).emit('getClients', document.getClients());
+
+      //     // send selections
+      //     namespace.in(roomName).emit('getSelections', document.getSelections());
+      //   }).catch((error) => {
+      //     socket.emit('initFailed', error);
+      //     socket.disconnect();
+      //   });
       });
     });
 
     return this;
-  }
-
-  async findOrCreateDocument(namespaceName, room, clientID) {
-    let document = this.findDocument(namespaceName, room);
-    if (!document) {
-      document = new Document(namespaceName, room, this.options.maxStoredSteps);
-      await this.onCreateDocumentCallback({ document, clientID });
-      this.documents.push(document);
-    }
-
-    return document;
-  }
-
-  findDocument(namespaceName, room) {
-    return this.documents.find(
-      (document) => document.id === `${namespaceName}/${room}`,
-    );
-  }
-
-  async removeDocument(document, clientID) {
-    await this.onRemoveDocumentCallback({ document, clientID });
-    this.documents = this.documents.filter((doc) => doc.id !== document.id);
   }
 
   close() {
@@ -128,36 +194,29 @@ export default class CollabServer {
   }
 
   // Hooks
-  beforeConnection(callback) {
-    this.connectionGuard = (param) => new Promise((resolve, reject) => {
+  connectionGuard(callback) {
+    this.connectionGuardCallback = (param) => new Promise((resolve, reject) => {
+      callback(param, resolve, reject);
+    });
+    return this;
+  }
+
+  initDocument(callback) {
+    this.initDocumentCallback = (param) => new Promise((resolve, reject) => {
       callback(param, resolve, reject);
     });
     return this;
   }
 
   onClientConnect(callback) {
-    this.onClientConnectionCallback = (param) => new Promise((resolve, reject) => {
+    this.onClientConnectCallback = (param) => new Promise((resolve, reject) => {
       callback(param, resolve, reject);
     });
     return this;
   }
 
   onClientDisconnect(callback) {
-    this.onClientDisconnectionCallback = (param) => new Promise((resolve, reject) => {
-      callback(param, resolve, reject);
-    });
-    return this;
-  }
-
-  onNewDocument(callback) {
-    this.onCreateDocumentCallback = (param) => new Promise((resolve, reject) => {
-      callback(param, resolve, reject);
-    });
-    return this;
-  }
-
-  onLeaveDocument(callback) {
-    this.onRemoveDocumentCallback = (param) => new Promise((resolve, reject) => {
+    this.onClientDisconnectCallback = (param) => new Promise((resolve, reject) => {
       callback(param, resolve, reject);
     });
     return this;

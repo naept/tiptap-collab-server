@@ -1,19 +1,12 @@
 import fs from 'fs';
+import LockError from './errors/lockError';
 
 const dbPath = './db';
-const docTrailer = '-db.json';
-const lockedTrailer = '-db_locked.json';
-const stepsTrailer = '-db_steps.json';
-const defaultData = {
-  version: 0,
-  doc: { type: 'doc', content: [{ type: 'paragraph' }] },
-};
 
 export default class Database {
-  constructor(namespaceDir, roomName, maxStoredSteps) {
+  constructor(namespaceDir, roomName) {
     this.namespaceDir = namespaceDir;
     this.roomName = roomName;
-    this.maxStoredSteps = maxStoredSteps;
 
     // Create directory if it does not exist
     if (!fs.existsSync(dbPath + this.namespaceDir)) {
@@ -25,72 +18,36 @@ export default class Database {
     return `${dbPath + this.namespaceDir}/${this.roomName}${trailer}`;
   }
 
-  storeDoc(data) {
-    fs.writeFileSync(this.makePath(docTrailer), JSON.stringify(data, null, 2));
+  lock(delay = 50, retry = 10) {
+    const lockLoop = (r) => new Promise((resolve, reject) => {
+      fs.promises.writeFile(this.makePath('_lock.json'), '', { flag: 'wx+' })
+        .then(resolve)
+        // eslint-disable-next-line consistent-return
+        .catch(() => {
+          if (r === 1) return reject(new LockError());
+          setTimeout(() => {
+            resolve(lockLoop(r - 1));
+          }, delay);
+        });
+    });
+    return lockLoop(retry);
   }
 
-  storeSteps(steps) {
-    let limitedOldData = [];
-    try {
-      const oldData = JSON.parse(fs.readFileSync(this.makePath(stepsTrailer), 'utf8'));
-      limitedOldData = oldData.slice(Math.max(oldData.length - this.maxStoredSteps));
-    } catch (e) {
-      limitedOldData = [];
-    }
-
-    const newData = [
-      ...limitedOldData,
-      ...steps,
-    ];
-
-    fs.writeFileSync(this.makePath(stepsTrailer), JSON.stringify(newData));
+  unlock() {
+    return fs.promises.unlink(this.makePath('_lock.json')).catch(() => {});
   }
 
-  storeLocked(locked) {
-    fs.writeFileSync(this.makePath(lockedTrailer), locked.toString());
+  get(docName, defaultValue = null) {
+    return fs.promises.readFile(this.makePath(`-${docName}.json`), 'utf8')
+      .then((data) => JSON.parse(data))
+      .catch(() => defaultValue);
   }
 
-  deleteFiles() {
-    let success = true;
-    try {
-      fs.unlinkSync(this.makePath(docTrailer));
-    } catch (e) {
-      success = false;
-    }
-    try {
-      fs.unlinkSync(this.makePath(lockedTrailer));
-    } catch (e) {
-      success = false;
-    }
-    try {
-      fs.unlinkSync(this.makePath(stepsTrailer));
-    } catch (e) {
-      success = false;
-    }
-    return success;
+  store(docName, value) {
+    return fs.promises.writeFile(this.makePath(`-${docName}.json`), JSON.stringify(value), 'utf8');
   }
 
-  getDoc() {
-    try {
-      return JSON.parse(fs.readFileSync(this.makePath(docTrailer), 'utf8'));
-    } catch (e) {
-      return defaultData;
-    }
-  }
-
-  getSteps() {
-    try {
-      return JSON.parse(fs.readFileSync(this.makePath(stepsTrailer), 'utf8'));
-    } catch (e) {
-      return [];
-    }
-  }
-
-  getLocked() {
-    try {
-      return JSON.parse(fs.readFileSync(this.makePath(lockedTrailer), 'utf8'));
-    } catch (e) {
-      return false;
-    }
+  deleteMany(docNames) {
+    return Promise.all(docNames.map((docName) => fs.promises.unlink(this.makePath(`-${docName}.json`)).catch(() => {})));
   }
 }
