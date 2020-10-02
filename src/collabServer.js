@@ -98,6 +98,10 @@ export default class CollabServer {
               ))
               .then(({ version, doc }) => {
                 socket.emit('init', { version, doc });
+                return document.getSelections();
+              })
+              .then((selections) => {
+                socket.emit('getSelections', selections);
               });
           })
           .catch((error) => {

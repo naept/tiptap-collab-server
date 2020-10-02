@@ -167,7 +167,7 @@ describe('CollabServer', () => {
         client.on('getClients', (clients) => {
           expect(clients).to.be.eql(['client']);
           done();
-          client.on('getClients', () => {}); // This event will be send again on disconnect
+          client.on('getClients', () => {}); // restore
         });
 
         client.emit('join', {
@@ -248,6 +248,19 @@ describe('CollabServer', () => {
             clientID: 'client',
           });
         });
+
+        it('should emit getSelections with selections', (done) => {
+          client.on('getSelections', (selections) => {
+            expect(selections).to.be.eql([]);
+            done();
+            client.on('getSelections', () => {}); // restore
+          });
+
+          client.emit('join', {
+            roomName: 'some-room',
+            clientID: 'client',
+          });
+        });
       });
     });
   });
@@ -318,7 +331,7 @@ describe('CollabServer', () => {
         done();
       });
 
-      client.on('init', () => {
+      client.on('getSelections', () => {
         client2.emit('join', {
           roomName: 'some-room',
           clientID: 'client-2',
@@ -338,14 +351,29 @@ describe('CollabServer', () => {
     it('should emit getSelections with all current selections to every other client', (done) => {
       const newSelection1 = { selection: { from: 1, to: 2 } };
       const newSelection2 = { selection: { from: 4, to: 4 } };
+
+      let client2GetSelectionsCount = 0;
+
       client2.on('getSelections', (params) => {
-        expect(params).to.be.eql([
-          {
-            ...newSelection1,
-            clientID: 'client',
-          },
-        ]);
-        client2.emit('updateSelection', newSelection2);
+        client2GetSelectionsCount += 1;
+        switch (client2GetSelectionsCount) {
+          case 1:
+            expect(params).to.be.eql([]);
+            break;
+
+          case 2:
+            expect(params).to.be.eql([
+              {
+                ...newSelection1,
+                clientID: 'client',
+              },
+            ]);
+            client2.emit('updateSelection', newSelection2);
+            break;
+
+          default:
+            break;
+        }
       });
 
       client.on('getSelections', (params) => {
