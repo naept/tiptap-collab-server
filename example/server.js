@@ -1,24 +1,24 @@
-// import CollabServer from 'tiptap-collab-server';
-import CollabServer from '../src/collabServer';
+import CollabServer from 'tiptap-collab-server';
+// import CollabServer from '../src/collabServer';
 
 new CollabServer({
   port: 6002,
   namespaceFilter: /^\/[a-zA-Z0-9_/-]+$/,
 })
   .connectionGuard(({
-    socket, roomName, clientID, options,
+    namespaceName, roomName, clientID, options,
   }, resolve) => {
-    console.log('connectionGuard', socket.nsp.name, roomName, clientID, options);
+    console.log('connectionGuard', namespaceName, roomName, clientID, options);
     resolve();
   })
   .initDocument(({
-    room, clientID, version, doc,
+    namespaceName, roomName, clientID, clientsCount, version, doc,
   }, resolve) => {
     console.log('initDocument', {
-      room, clientID, version, doc,
+      namespaceName, roomName, clientID, clientsCount, version, doc,
     });
     // Load from backend if first user connected
-    if (room.length === 1 && version === 0) {
+    if (clientsCount === 1 && version === 0) {
       resolve({
         version: 1,
         doc: {
@@ -29,7 +29,7 @@ new CollabServer({
               content: [
                 {
                   type: 'text',
-                  text: 'Un peu de texte pour commencer',
+                  text: 'A tiny paragraph to start.',
                 },
               ],
             },
@@ -40,14 +40,18 @@ new CollabServer({
       resolve({ version, doc });
     }
   })
-  .onClientConnect(({ clientID, room, document }, resolve) => {
-    console.log('onClientConnect', clientID, room, document);
+  .onClientConnect(({
+    namespaceName, roomName, clientID, clientsCount, document,
+  }, resolve) => {
+    console.log('onClientConnect', namespaceName, roomName, clientID, clientsCount, document);
     resolve();
   })
-  .onClientDisconnect(({ clientID, room, document }, resolve) => {
+  .onClientDisconnect(({
+    namespaceName, roomName, clientID, clientsCount, document,
+  }, resolve) => {
     // Save to backend
-    console.log('onClientDisconnect', clientID, room, document);
-    if (room === undefined) {
+    console.log('onClientDisconnect', namespaceName, roomName, clientID, clientsCount, document);
+    if (clientsCount === 0) {
       document.deleteDatabase();
     } else {
       resolve();
