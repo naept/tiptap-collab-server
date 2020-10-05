@@ -10,7 +10,8 @@ export default class CollabServer {
     this.io = new SocketIO(http);
 
     this.connectionGuard((_param, resolve) => { resolve(); });
-    this.initDocument((param, resolve) => { resolve(param); });
+    this.initDocument((_param, resolve) => { resolve(); });
+    this.leaveDocument((_param, resolve) => { resolve(); });
     this.onClientConnect((_param, resolve) => { resolve(); });
     this.onClientDisconnect((_param, resolve) => { resolve(); });
   }
@@ -30,7 +31,13 @@ export default class CollabServer {
           .then(() => {
             socket.join(roomName);
 
-            const document = new Document(namespace.name, roomName, this.options.maxStoredSteps);
+            const document = new Document(
+              namespace.name,
+              roomName,
+              this.options.lockDelay,
+              this.options.lockRetries,
+              this.options.maxStoredSteps,
+            );
 
             // Document event management
             document
@@ -63,14 +70,24 @@ export default class CollabServer {
             });
 
             // Handle update selection
-            socket.on('updateSelection', async (data) => {
+            socket.on('updateSelection', (data) => {
               document.updateSelection({ ...data, clientID }, socket.id);
             });
 
             // Handle disconnection
-            socket.on('disconnect', async () => {
-              document.removeSelection(socket.id)
-                .then(() => document.removeClient(socket.id))
+            socket.on('disconnect', () => {
+              document.leaveDoc(socket.id,
+                ({ version, doc }, deleteDatabase) => this.leaveDocumentCallback({
+                  namespaceName: namespace.name,
+                  roomName,
+                  clientID,
+                  clientsCount: namespace.adapter.rooms[roomName]
+                    ? namespace.adapter.rooms[roomName].length
+                    : 0,
+                  version,
+                  doc,
+                  deleteDatabase,
+                }))
                 .then(() => this.onClientDisconnectCallback({
                   namespaceName: namespace.name,
                   roomName,
@@ -78,7 +95,6 @@ export default class CollabServer {
                   clientsCount: namespace.adapter.rooms[roomName]
                     ? namespace.adapter.rooms[roomName].length
                     : 0,
-                  document,
                 }));
             });
 
@@ -91,7 +107,6 @@ export default class CollabServer {
                 roomName,
                 clientID,
                 clientsCount: namespace.adapter.rooms[roomName].length,
-                document,
               }))
               .then(() => document.addClient(clientID, socket.id))
               .then(() => document.initDoc(
@@ -135,6 +150,13 @@ export default class CollabServer {
 
   initDocument(callback) {
     this.initDocumentCallback = (param) => new Promise((resolve, reject) => {
+      callback(param, resolve, reject);
+    });
+    return this;
+  }
+
+  leaveDocument(callback) {
+    this.leaveDocumentCallback = (param) => new Promise((resolve, reject) => {
       callback(param, resolve, reject);
     });
     return this;

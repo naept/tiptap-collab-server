@@ -4,6 +4,8 @@ import CollabServer from 'tiptap-collab-server';
 new CollabServer({
   port: 6002,
   namespaceFilter: /^\/[a-zA-Z0-9_/-]+$/,
+  lockDelay: 1000,
+  lockRetries: 10,
 })
   .connectionGuard(({
     namespaceName, roomName, clientID, options,
@@ -37,24 +39,31 @@ new CollabServer({
         },
       });
     } else {
-      resolve({ version, doc });
+      resolve();
     }
   })
-  .onClientConnect(({
-    namespaceName, roomName, clientID, clientsCount, document,
+  .leaveDocument(({
+    namespaceName, roomName, clientID, clientsCount, version, doc, deleteDatabase,
   }, resolve) => {
-    console.log('onClientConnect', namespaceName, roomName, clientID, clientsCount, document);
+    console.log('leaveDocument', {
+      namespaceName, roomName, clientID, clientsCount, version, doc, deleteDatabase,
+    });
+    // Save to backend if last user disconnected
+    if (clientsCount === 0) {
+      deleteDatabase().then(() => resolve());
+    }
+    resolve();
+  })
+  .onClientConnect(({
+    namespaceName, roomName, clientID, clientsCount,
+  }, resolve) => {
+    console.log('onClientConnect', namespaceName, roomName, clientID, clientsCount);
     resolve();
   })
   .onClientDisconnect(({
-    namespaceName, roomName, clientID, clientsCount, document,
+    namespaceName, roomName, clientID, clientsCount,
   }, resolve) => {
-    // Save to backend
-    console.log('onClientDisconnect', namespaceName, roomName, clientID, clientsCount, document);
-    if (clientsCount === 0) {
-      document.deleteDatabase();
-    } else {
-      resolve();
-    }
+    console.log('onClientDisconnect', namespaceName, roomName, clientID, clientsCount);
+    resolve();
   })
   .serve();

@@ -9,11 +9,11 @@ const defaultData = {
 };
 
 export default class Document {
-  constructor(namespaceDir, roomName, maxStoredSteps = 1000) {
+  constructor(namespaceDir, roomName, lockDelay = 50, lockRetries = 10, maxStoredSteps = 1000) {
     this.namespaceDir = namespaceDir;
     this.roomName = roomName;
     this.maxStoredSteps = maxStoredSteps;
-    this.database = new Database(namespaceDir, roomName);
+    this.database = new Database(namespaceDir, roomName, lockDelay, lockRetries);
 
     this.onVersionMismatchCallback = () => {};
     this.onNewVersionCallback = () => {};
@@ -25,13 +25,16 @@ export default class Document {
     let returnData;
     return this.database.lock()
       .then(() => this.database.get('doc', defaultData))
-      .then((data) => processingPromise(data))
-      .then(({ version, doc }) => {
-        returnData = { version, doc };
-        return this.database.store('doc', {
-          version,
-          doc,
-        });
+      .then((data) => {
+        returnData = data;
+        return processingPromise(data);
+      })
+      .then((data) => {
+        if (data) {
+          returnData = data;
+          return this.database.store('doc', data);
+        }
+        return new Promise((r) => { r(); });
       })
       .then(() => returnData)
       .finally(() => this.database.unlock());
@@ -98,6 +101,55 @@ export default class Document {
       .finally(() => this.database.unlock());
   }
 
+  leaveDoc(socketID, processingPromise) {
+    const removeSelection = () => this.database.get('sel', {})
+      .then((selections) => {
+        if (selections[socketID]) {
+          const { [socketID]: deleted, ...newSelections } = selections;
+
+          return this.database.store('sel', newSelections)
+            .then(() => {
+              this.onSelectionsUpdatedCallback(Object.values(newSelections));
+            });
+        }
+        return new Promise((r) => { r(); });
+      });
+
+    const removeClient = () => this.database.get('clients', {})
+      .then((clients) => {
+        if (clients[socketID]) {
+          const { [socketID]: deleted, ...newClients } = clients;
+
+          return this.database.store('clients', newClients)
+            .then(() => {
+              this.onClientsUpdatedCallback(Object.values(newClients));
+            });
+        }
+        return new Promise((r) => { r(); });
+      });
+
+    const deleteDatabase = () => this.database.deleteMany(['doc', 'steps', 'sel', 'clients']);
+
+    let returnData;
+    return this.database.lock()
+      .then(() => removeSelection())
+      .then(() => removeClient())
+      .then(() => this.database.get('doc', defaultData))
+      .then((data) => {
+        returnData = data;
+        return processingPromise(data, deleteDatabase);
+      })
+      .then((data) => {
+        if (data) {
+          returnData = data;
+          return this.database.store('doc', data);
+        }
+        return new Promise((r) => { r(); });
+      })
+      .then(() => returnData)
+      .finally(() => this.database.unlock());
+  }
+
   getSelections() {
     return this.database.lock()
       .then(() => this.database.get('sel', {}))
@@ -131,23 +183,6 @@ export default class Document {
       .finally(() => this.database.unlock());
   }
 
-  removeSelection(socketID) {
-    return this.database.lock()
-      .then(() => this.database.get('sel', {}))
-      .then((selections) => {
-        if (selections[socketID]) {
-          const { [socketID]: deleted, ...newSelections } = selections;
-
-          return this.database.store('sel', newSelections)
-            .then(() => {
-              this.onSelectionsUpdatedCallback(Object.values(newSelections));
-            });
-        }
-        return new Promise((r) => { r(); });
-      })
-      .finally(() => this.database.unlock());
-  }
-
   getClients() {
     return this.database.lock()
       .then(() => this.database.get('clients', {}))
@@ -164,23 +199,6 @@ export default class Document {
             ...clients,
             [socketID]: clientID,
           };
-
-          return this.database.store('clients', newClients)
-            .then(() => {
-              this.onClientsUpdatedCallback(Object.values(newClients));
-            });
-        }
-        return new Promise((r) => { r(); });
-      })
-      .finally(() => this.database.unlock());
-  }
-
-  removeClient(socketID) {
-    return this.database.lock()
-      .then(() => this.database.get('clients', {}))
-      .then((clients) => {
-        if (clients[socketID]) {
-          const { [socketID]: deleted, ...newClients } = clients;
 
           return this.database.store('clients', newClients)
             .then(() => {
@@ -236,12 +254,6 @@ export default class Document {
         }
         return new Promise((r) => { r(); });
       })
-      .finally(() => this.database.unlock());
-  }
-
-  deleteDatabase() {
-    return this.database.lock()
-      .then(() => this.database.deleteMany(['doc', 'steps', 'sel', 'clients']))
       .finally(() => this.database.unlock());
   }
 

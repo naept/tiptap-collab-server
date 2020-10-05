@@ -75,6 +75,28 @@ const storedSteps = [
   },
 ];
 
+const storedSelections = {
+  'socket-a': {
+    clientID: 'client-1',
+    selection: {
+      from: 3,
+      to: 3,
+    },
+  },
+  'socket-b': {
+    clientID: 'client-2',
+    selection: {
+      from: 2,
+      to: 5,
+    },
+  },
+};
+
+const storedClients = {
+  'socket-a': 'client-1',
+  'socket-b': 'client-2',
+};
+
 const updateData = {
   version: 3,
   steps: [
@@ -191,7 +213,7 @@ describe('CollabServer', () => {
 
       describe('- - if init document callback rejects', () => {
         beforeEach(() => {
-          collabServer.initDocument((_param, resolve, reject) => { reject(); });
+          collabServer.initDocument((_param, _resolve, reject) => { reject(); });
         });
 
         it('should emit initFailed', (done) => {
@@ -395,6 +417,8 @@ describe('CollabServer', () => {
   });
 
   describe('# disconnection', () => {
+    let client2;
+
     beforeEach((done) => {
       fs.mkdirSync('./db/some-namespace', { recursive: true });
       fs.writeFileSync('./db/some-namespace/some-room-steps.json', JSON.stringify(storedSteps));
@@ -402,14 +426,84 @@ describe('CollabServer', () => {
       collabServer.connectionGuard((_param, resolve) => { resolve(); });
       collabServer.initDocument((_param, resolve) => { resolve(initDocument); });
 
-      client.on('init', () => {
+      client2 = io('http://localhost:6000/some-namespace');
+      client2.once('init', () => {
         done();
+      });
+
+      client.once('getSelections', () => {
+        client2.emit('join', {
+          roomName: 'some-room',
+          clientID: 'client-2',
+        });
       });
 
       client.emit('join', {
         roomName: 'some-room',
         clientID: 'client',
       });
+    });
+
+    afterEach(() => {
+      client2 && client2.connected && client2.disconnect();
+    });
+
+    it('should emit getSelections with all current selections to every other client', (done) => {
+      let client2GetSelectionsCount = 0;
+
+      client2.on('getSelections', (params) => {
+        client2GetSelectionsCount += 1;
+        switch (client2GetSelectionsCount) {
+          case 1:
+            // Emitted once after client2 init
+            break;
+
+          case 2:
+            expect(params).to.be.eql(Object.values(storedSelections));
+            done();
+            break;
+
+          default:
+            break;
+        }
+      });
+
+      fs.writeFileSync('./db/some-namespace/some-room-sel.json', JSON.stringify({
+        ...storedSelections,
+        [client.id]: {
+          clientID: 'client-1',
+          selection: {
+            from: 3,
+            to: 3,
+          },
+        },
+      }));
+
+      client.disconnect();
+    });
+
+    it('should emit getClients to every other client', (done) => {
+      client2.on('getClients', (params) => {
+        expect(params).to.be.eql(Object.values(storedClients));
+        done();
+      });
+
+      fs.writeFileSync('./db/some-namespace/some-room-clients.json', JSON.stringify({
+        ...storedClients,
+        [client.id]: 'client-1',
+      }));
+
+      client.disconnect();
+    });
+
+    it('should go through leaveDocumentCallback', (done) => {
+      collabServer.leaveDocument((_param, resolve) => {
+        collabServer.leaveDocument((_p, r) => { r(); }); // restore
+        done();
+        resolve();
+      });
+
+      client.disconnect();
     });
 
     it('should go through onClientDisconnectCallback', (done) => {

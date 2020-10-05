@@ -4,9 +4,11 @@ import LockError from './errors/lockError';
 const dbPath = './db';
 
 export default class Database {
-  constructor(namespaceDir, roomName) {
+  constructor(namespaceDir, roomName, lockDelay = 50, lockRetries = 10) {
     this.namespaceDir = namespaceDir;
     this.roomName = roomName;
+    this.lockDelay = lockDelay;
+    this.lockRetries = lockRetries;
 
     // Create directory if it does not exist
     if (!fs.existsSync(dbPath + this.namespaceDir)) {
@@ -18,7 +20,7 @@ export default class Database {
     return `${dbPath + this.namespaceDir}/${this.roomName}${trailer}`;
   }
 
-  lock(delay = 50, retry = 10) {
+  lock(delay = this.lockDelay, retries = this.lockRetries) {
     const lockLoop = (r) => new Promise((resolve, reject) => {
       fs.promises.writeFile(this.makePath('_lock.json'), '', { flag: 'wx+' })
         .then(resolve)
@@ -30,7 +32,7 @@ export default class Database {
           }, delay);
         });
     });
-    return lockLoop(retry);
+    return lockLoop(retries);
   }
 
   unlock() {

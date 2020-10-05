@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import fs from 'fs';
 import sinon from 'sinon';
 import Document from '../src/document';
 import Database from '../src/database';
@@ -159,24 +160,23 @@ describe('Document', () => {
   let databaseLockSpy;
   let databaseUnlockSpy;
 
-  it('can be created with maxStoredSteps argument', () => {
-    document = new Document('/Namespace', 'Room', 50);
+  it('can be created with optional arguments', () => {
+    document = new Document('/Namespace', 'Room', 1000, 5, 50);
     expect(document.maxStoredSteps).to.be.equal(50);
+    expect(document.database.lockDelay).to.be.equal(1000);
+    expect(document.database.lockRetries).to.be.equal(5);
   });
 
   beforeEach(() => {
+    fs.rmdirSync('db', { recursive: true });
     document = new Document('/Namespace', 'Room');
     databaseLockSpy = sinon.spy(document.database, 'lock');
     databaseUnlockSpy = sinon.spy(document.database, 'unlock');
   });
 
-  afterEach((done) => {
+  afterEach(() => {
     databaseLockSpy.restore();
     databaseUnlockSpy.restore();
-    document.deleteDatabase()
-      .then(() => {
-        done();
-      });
   });
 
   describe('# When created', () => {
@@ -232,47 +232,82 @@ describe('Document', () => {
       ],
     };
 
-    it('should store new doc with version in database', (done) => {
-      document.initDoc((data) => {
-        expect(data).to.be.eql(defaultData);
-        return new Promise((resolve) => {
-          resolve({
-            version: 1,
-            doc: docContent,
-          });
-        });
-      })
-        .then(() => document.getDoc())
-        .then((data) => {
-          expect(data).to.be.eql({
-            version: 1,
-            doc: docContent,
+    describe('- If processingPromise returns a document', () => {
+      it('should store new doc with version in database', (done) => {
+        document.initDoc((data) => {
+          expect(data).to.be.eql(defaultData);
+          return new Promise((resolve) => {
+            resolve({
+              version: 1,
+              doc: docContent,
+            });
           });
         })
-        .finally(() => {
-          done();
-        });
+          .then(() => document.getDoc())
+          .then((data) => {
+            expect(data).to.be.eql({
+              version: 1,
+              doc: docContent,
+            });
+          })
+          .finally(() => {
+            done();
+          });
+      });
+
+      it('should return the new doc with version', (done) => {
+        document.initDoc((data) => {
+          expect(data).to.be.eql(defaultData);
+          return new Promise((resolve) => {
+            resolve({
+              version: 1,
+              doc: docContent,
+            });
+          });
+        })
+          .then((data) => {
+            expect(data).to.be.eql({
+              version: 1,
+              doc: docContent,
+            });
+          })
+          .finally(() => {
+            done();
+          });
+      });
     });
 
-    it('should return the new doc with version', (done) => {
-      document.initDoc((data) => {
-        expect(data).to.be.eql(defaultData);
-        return new Promise((resolve) => {
-          resolve({
-            version: 1,
-            doc: docContent,
-          });
-        });
-      })
-        .then((data) => {
-          expect(data).to.be.eql({
-            version: 1,
-            doc: docContent,
+    describe('- If processingPromise returns nothing', () => {
+      it('should not store new doc with version in database', (done) => {
+        document.initDoc((data) => {
+          expect(data).to.be.eql(defaultData);
+          return new Promise((resolve) => {
+            resolve();
           });
         })
-        .finally(() => {
-          done();
-        });
+          .then(() => document.getDoc())
+          .then((data) => {
+            expect(data).to.be.eql(defaultData);
+          })
+          .finally(() => {
+            done();
+          });
+      });
+
+      it('should return the retrieved doc with version', (done) => {
+        document.initDoc((data) => {
+          expect(data).to.be.eql(defaultData);
+          return new Promise((resolve) => {
+            resolve();
+          });
+        })
+          .then((data) => {
+            expect(data).to.be.eql(defaultData);
+          })
+          .finally(() => {
+            done();
+          });
+      });
     });
 
     it('should lock the database during operation', (done) => {
@@ -520,6 +555,276 @@ describe('Document', () => {
     });
   });
 
+  describe('# leaveDoc', () => {
+    const docContent = {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            {
+              type: 'text',
+              text: 'Brand new text!',
+            },
+          ],
+        },
+      ],
+    };
+    let databaseGetStub;
+    let databaseStoreSpy;
+
+    beforeEach(() => {
+      databaseGetStub = sinon.stub(document.database, 'get');
+      databaseGetStub.withArgs('doc').resolves(storedDocument);
+      databaseGetStub.withArgs('sel').resolves(storedSelections);
+      databaseGetStub.withArgs('clients').resolves(storedClients);
+      databaseStoreSpy = sinon.spy(document.database, 'store');
+    });
+
+    afterEach(() => {
+      databaseStoreSpy.restore();
+      databaseGetStub.restore();
+    });
+
+    describe('- If processingPromise returns a document', () => {
+      it('should store new doc with version in database', (done) => {
+        document.leaveDoc('socket-a', (data) => {
+          expect(data).to.be.eql(storedDocument);
+          return new Promise((resolve) => {
+            resolve({
+              version: 1,
+              doc: docContent,
+            });
+          });
+        })
+          .then(() => {
+            expect(databaseStoreSpy.calledWithExactly('doc', {
+              version: 1,
+              doc: docContent,
+            })).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+
+      it('should return the new doc with version', (done) => {
+        document.leaveDoc('socket-a', () => new Promise((resolve) => {
+          resolve({
+            version: 1,
+            doc: docContent,
+          });
+        }))
+          .then((data) => {
+            expect(data).to.be.eql({
+              version: 1,
+              doc: docContent,
+            });
+          })
+          .finally(() => {
+            done();
+          });
+      });
+    });
+
+    describe('- If processingPromise returns nothing', () => {
+      it('should not store new doc with version in database', (done) => {
+        document.leaveDoc('socket-a', () => new Promise((resolve) => {
+          resolve();
+        }))
+          .then(() => {
+            expect(databaseStoreSpy.neverCalledWith('doc'));
+          })
+          .finally(() => {
+            done();
+          });
+      });
+
+      it('should return the retrieved doc with version', (done) => {
+        document.leaveDoc('socket-a', () => new Promise((resolve) => {
+          resolve();
+        }))
+          .then((data) => {
+            expect(data).to.be.eql(storedDocument);
+          })
+          .finally(() => {
+            done();
+          });
+      });
+    });
+
+    it('should delete all files from database if callback calls deleteDatabase', (done) => {
+      document.leaveDoc('socket-a', (_data, deleteDatabase) => new Promise((resolve) => {
+        deleteDatabase().then(() => resolve());
+      }))
+        .then(() => {
+          const deletedFiles = [];
+          try {
+            fs.readFileSync('./db/Namespace/Room-doc.json');
+          } catch (error) {
+            deletedFiles.push('doc');
+          }
+          try {
+            fs.readFileSync('./db/Namespace/Room-steps.json');
+          } catch (error) {
+            deletedFiles.push('steps');
+          }
+          try {
+            fs.readFileSync('./db/Namespace/Room-sel.json');
+          } catch (error) {
+            deletedFiles.push('sel');
+          }
+          try {
+            fs.readFileSync('./db/Namespace/Room-clients.json');
+          } catch (error) {
+            deletedFiles.push('clients');
+          }
+          expect(deletedFiles).to.be.eql(['doc', 'steps', 'sel', 'clients']);
+        })
+        .finally(() => {
+          done();
+        });
+    });
+
+    describe('- if client is in the list', () => {
+      it('should delete selection from the list', (done) => {
+        document.leaveDoc('socket-a', () => new Promise((resolve) => {
+          resolve();
+        }))
+          .then(() => {
+            const { 'socket-a': deleted, ...newSelections } = storedSelections;
+            expect(databaseStoreSpy.calledWithExactly('sel', newSelections)).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+
+      it('should delete client from the list', (done) => {
+        document.leaveDoc('socket-a', () => new Promise((resolve) => {
+          resolve();
+        }))
+          .then(() => {
+            const { 'socket-a': deleted, ...newClients } = storedClients;
+            expect(databaseStoreSpy.calledWithExactly('clients', newClients)).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+
+      it('should call onSelectionsUpdatedCallback with updated selections', (done) => {
+        const onSelectionsUpdatedCallbackSpy = sinon.spy(document, 'onSelectionsUpdatedCallback');
+
+        document.leaveDoc('socket-a', () => new Promise((resolve) => {
+          resolve();
+        }))
+          .then(() => {
+            const { 'socket-a': deleted, ...newSelections } = storedSelections;
+            expect(
+              onSelectionsUpdatedCallbackSpy.calledWithExactly(Object.values(newSelections)),
+            ).to.be.true;
+          })
+          .finally(() => {
+            onSelectionsUpdatedCallbackSpy.restore();
+            done();
+          });
+      });
+
+      it('should call onClientsUpdatedCallback with all clients', (done) => {
+        const onClientsUpdatedCallbackSpy = sinon.spy(document, 'onClientsUpdatedCallback');
+
+        document.leaveDoc('socket-a', () => new Promise((resolve) => {
+          resolve();
+        }))
+          .then(() => {
+            const { 'socket-a': deleted, ...newClients } = storedClients;
+            expect(
+              onClientsUpdatedCallbackSpy.calledOnceWithExactly(Object.values(newClients)),
+            ).to.be.true;
+          })
+          .finally(() => {
+            onClientsUpdatedCallbackSpy.restore();
+            done();
+          });
+      });
+    });
+
+    describe('- if client is not in the list', () => {
+      it('should not change the selection list', (done) => {
+        document.leaveDoc('fakeSocket', () => new Promise((resolve) => {
+          resolve();
+        }))
+          .then(() => {
+            expect(databaseStoreSpy.neverCalledWith('sel')).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+
+      it('should not change the clients list', (done) => {
+        document.leaveDoc('fakeSocket', () => new Promise((resolve) => {
+          resolve();
+        }))
+          .then(() => {
+            expect(databaseStoreSpy.neverCalledWith('clients')).to.be.true;
+          })
+          .finally(() => {
+            done();
+          });
+      });
+
+      it('should not call onSelectionsUpdatedCallback', (done) => {
+        const onSelectionsUpdatedCallbackSpy = sinon.spy(document, 'onSelectionsUpdatedCallback');
+
+        document.leaveDoc('fakeSocket', () => new Promise((resolve) => {
+          resolve();
+        }))
+          .then(() => {
+            expect(onSelectionsUpdatedCallbackSpy.notCalled).to.be.true;
+          })
+          .finally(() => {
+            onSelectionsUpdatedCallbackSpy.restore();
+            done();
+          });
+      });
+
+      it('should not call onClientsUpdatedCallback', (done) => {
+        const onClientsUpdatedCallbackSpy = sinon.spy(document, 'onClientsUpdatedCallback');
+
+        document.leaveDoc('fakeSocket', () => new Promise((resolve) => {
+          resolve();
+        }))
+          .then(() => {
+            expect(onClientsUpdatedCallbackSpy.notCalled).to.be.true;
+          })
+          .finally(() => {
+            onClientsUpdatedCallbackSpy.restore();
+            done();
+          });
+      });
+    });
+
+    it('should lock the database during operation', (done) => {
+      document.leaveDoc('socket-a', () => new Promise((resolve) => {
+        resolve({
+          version: 1,
+          doc: docContent,
+        });
+      }))
+        .then(() => {
+          expect(databaseLockSpy.calledBefore(databaseGetStub)).to.be.true;
+          expect(databaseUnlockSpy.calledAfter(databaseStoreSpy)).to.be.true;
+        })
+        .finally(() => {
+          databaseGetStub.restore();
+          databaseStoreSpy.restore();
+          done();
+        });
+    });
+  });
+
   describe('# getSelections', () => {
     it('should return an empty array if no selection exist', (done) => {
       document.getSelections()
@@ -734,100 +1039,6 @@ describe('Document', () => {
     });
   });
 
-  describe('# removeSelection', () => {
-    let databaseGetStub;
-    let databaseStoreSpy;
-
-    beforeEach(() => {
-      databaseGetStub = sinon.stub(document.database, 'get');
-      databaseGetStub.withArgs('sel').resolves(storedSelections);
-      databaseStoreSpy = sinon.spy(document.database, 'store');
-    });
-
-    afterEach(() => {
-      databaseStoreSpy.restore();
-      databaseGetStub.restore();
-    });
-
-    describe('- if client is in the list', () => {
-      it('should delete client from the list', (done) => {
-        document.removeSelection('socket-a')
-          .then(() => {
-            const { 'socket-a': deleted, ...newSelections } = storedSelections;
-            expect(databaseStoreSpy.calledOnceWithExactly('sel', newSelections)).to.be.true;
-          })
-          .finally(() => {
-            done();
-          });
-      });
-
-      it('should call onSelectionsUpdatedCallback with updated selections', (done) => {
-        const onSelectionsUpdatedCallbackSpy = sinon.spy(document, 'onSelectionsUpdatedCallback');
-
-        document.removeSelection('socket-a')
-          .then(() => {
-            const { 'socket-a': deleted, ...newSelections } = storedSelections;
-            expect(
-              onSelectionsUpdatedCallbackSpy.calledOnceWithExactly(Object.values(newSelections)),
-            ).to.be.true;
-          })
-          .finally(() => {
-            onSelectionsUpdatedCallbackSpy.restore();
-            done();
-          });
-      });
-
-      it('should lock the database during operation', (done) => {
-        document.removeSelection('socket-a')
-          .then(() => {
-            expect(databaseLockSpy.calledBefore(databaseGetStub)).to.be.true;
-            expect(databaseLockSpy.calledBefore(databaseStoreSpy)).to.be.true;
-            expect(databaseUnlockSpy.calledAfter(databaseGetStub)).to.be.true;
-            expect(databaseUnlockSpy.calledAfter(databaseStoreSpy)).to.be.true;
-          })
-          .finally(() => {
-            done();
-          });
-      });
-    });
-
-    describe('- if client is not in the list', () => {
-      it('should not change the list', (done) => {
-        document.removeSelection('fakeSocket')
-          .then(() => {
-            expect(databaseStoreSpy.neverCalledWith('sel')).to.be.true;
-          })
-          .finally(() => {
-            done();
-          });
-      });
-
-      it('should not call onSelectionsUpdatedCallback', (done) => {
-        const onSelectionsUpdatedCallbackSpy = sinon.spy(document, 'onSelectionsUpdatedCallback');
-
-        document.removeSelection('fakeSocket')
-          .then(() => {
-            expect(onSelectionsUpdatedCallbackSpy.notCalled).to.be.true;
-          })
-          .finally(() => {
-            onSelectionsUpdatedCallbackSpy.restore();
-            done();
-          });
-      });
-
-      it('should lock the database during operation', (done) => {
-        document.removeSelection('fakeSocket')
-          .then(() => {
-            expect(databaseLockSpy.calledBefore(databaseGetStub)).to.be.true;
-            expect(databaseUnlockSpy.calledAfter(databaseGetStub)).to.be.true;
-          })
-          .finally(() => {
-            done();
-          });
-      });
-    });
-  });
-
   describe('# getClients', () => {
     it('should return an empty array if no clients exist', (done) => {
       document.getClients()
@@ -960,100 +1171,6 @@ describe('Document', () => {
           .finally(() => {
             done();
           });
-      });
-    });
-  });
-
-  describe('# removeClient', () => {
-    let databaseGetStub;
-    let databaseStoreSpy;
-
-    beforeEach(() => {
-      databaseGetStub = sinon.stub(document.database, 'get');
-      databaseGetStub.withArgs('clients').resolves(storedClients);
-      databaseStoreSpy = sinon.spy(document.database, 'store');
-    });
-
-    afterEach(() => {
-      databaseStoreSpy.restore();
-      databaseGetStub.restore();
-    });
-
-    describe('- if client is in the list', () => {
-      it('should delete client from the list', (done) => {
-        document.removeClient('socket-a')
-          .then(() => {
-            const { 'socket-a': deleted, ...newClients } = storedClients;
-            expect(databaseStoreSpy.calledOnceWithExactly('clients', newClients)).to.be.true;
-          })
-          .finally(() => {
-            done();
-          });
-      });
-
-      it('should call onClientsUpdatedCallback with all clients', (done) => {
-        const onClientsUpdatedCallbackSpy = sinon.spy(document, 'onClientsUpdatedCallback');
-
-        document.removeClient('socket-a')
-          .then(() => {
-            const { 'socket-a': deleted, ...newClients } = storedClients;
-            expect(
-              onClientsUpdatedCallbackSpy.calledOnceWithExactly(Object.values(newClients)),
-            ).to.be.true;
-          })
-          .finally(() => {
-            onClientsUpdatedCallbackSpy.restore();
-            done();
-          });
-      });
-
-      it('should lock the database during operation', (done) => {
-        document.removeClient('socket-a')
-          .then(() => {
-            expect(databaseLockSpy.calledBefore(databaseGetStub)).to.be.true;
-            expect(databaseLockSpy.calledBefore(databaseStoreSpy)).to.be.true;
-            expect(databaseUnlockSpy.calledAfter(databaseGetStub)).to.be.true;
-            expect(databaseUnlockSpy.calledAfter(databaseStoreSpy)).to.be.true;
-          })
-          .finally(() => {
-            done();
-          });
-      });
-
-      describe('- if client is not in the list', () => {
-        it('should not change the list', (done) => {
-          document.removeClient('fakeSocket')
-            .then(() => {
-              expect(databaseStoreSpy.neverCalledWith('clients')).to.be.true;
-            })
-            .finally(() => {
-              done();
-            });
-        });
-
-        it('should not call onClientsUpdatedCallback', (done) => {
-          const onClientsUpdatedCallbackSpy = sinon.spy(document, 'onClientsUpdatedCallback');
-
-          document.removeClient('fakeSocket')
-            .then(() => {
-              expect(onClientsUpdatedCallbackSpy.notCalled).to.be.true;
-            })
-            .finally(() => {
-              onClientsUpdatedCallbackSpy.restore();
-              done();
-            });
-        });
-
-        it('should lock the database during operation', (done) => {
-          document.removeClient('fakeSocket')
-            .then(() => {
-              expect(databaseLockSpy.calledBefore(databaseGetStub)).to.be.true;
-              expect(databaseUnlockSpy.calledAfter(databaseGetStub)).to.be.true;
-            })
-            .finally(() => {
-              done();
-            });
-        });
       });
     });
   });
