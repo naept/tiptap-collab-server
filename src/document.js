@@ -23,6 +23,7 @@ export default class Document {
 
   initDoc(processingPromise) {
     let returnData;
+    let shouldUnlock = true;
     return this.database.lock()
       .then(() => this.database.get('doc', defaultData))
       .then((data) => {
@@ -37,19 +38,37 @@ export default class Document {
         return new Promise((r) => { r(); });
       })
       .then(() => returnData)
-      .finally(() => this.database.unlock());
+      .catch((e) => {
+        if (e.name === 'LockError') {
+          shouldUnlock = false;
+        } else throw e;
+      })
+      .finally(() => {
+        if (shouldUnlock) return this.database.unlock();
+        return null;
+      });
   }
 
   getDoc() {
+    let shouldUnlock = true;
     return this.database.lock()
       .then(() => this.database.get('doc', defaultData))
-      .finally(() => this.database.unlock());
+      .catch((e) => {
+        if (e.name === 'LockError') {
+          shouldUnlock = false;
+        } else throw e;
+      })
+      .finally(() => {
+        if (shouldUnlock) return this.database.unlock();
+        return null;
+      });
   }
 
   updateDoc({ version, clientID, steps }) {
     let currentDoc;
     let currentSteps;
     let newSteps;
+    let shouldUnlock = true;
     return this.database.lock()
       .then(() => this.database.get('steps', []))
       .then((data) => {
@@ -96,9 +115,15 @@ export default class Document {
             version,
             steps: currentSteps.filter((step) => step.version > version),
           });
-        } else if (e.name !== 'LockError') throw e;
+        } else
+        if (e.name === 'LockError') {
+          shouldUnlock = false;
+        } else throw e;
       })
-      .finally(() => this.database.unlock());
+      .finally(() => {
+        if (shouldUnlock) return this.database.unlock();
+        return null;
+      });
   }
 
   leaveDoc(socketID, processingPromise) {
@@ -131,6 +156,7 @@ export default class Document {
     const deleteDatabase = () => this.database.deleteMany(['doc', 'steps', 'sel', 'clients']);
 
     let returnData;
+    let shouldUnlock = true;
     return this.database.lock()
       .then(() => removeSelection())
       .then(() => removeClient())
@@ -147,17 +173,35 @@ export default class Document {
         return new Promise((r) => { r(); });
       })
       .then(() => returnData)
-      .finally(() => this.database.unlock());
+      .catch((e) => {
+        if (e.name === 'LockError') {
+          shouldUnlock = false;
+        } else throw e;
+      })
+      .finally(() => {
+        if (shouldUnlock) return this.database.unlock();
+        return null;
+      });
   }
 
   getSelections() {
+    let shouldUnlock = true;
     return this.database.lock()
       .then(() => this.database.get('sel', {}))
       .then((selections) => Object.values(selections))
-      .finally(() => this.database.unlock());
+      .catch((e) => {
+        if (e.name === 'LockError') {
+          shouldUnlock = false;
+        } else throw e;
+      })
+      .finally(() => {
+        if (shouldUnlock) return this.database.unlock();
+        return null;
+      });
   }
 
   updateSelection({ clientID, selection }, socketID) {
+    let shouldUnlock = true;
     return this.database.lock()
       .then(() => this.database.get('sel', {}))
       .then((selections) => {
@@ -178,19 +222,34 @@ export default class Document {
         return new Promise((r) => { r(); });
       })
       .catch((e) => {
-        if (e.name !== 'LockError') throw e;
+        if (e.name === 'LockError') {
+          shouldUnlock = false;
+        } else throw e;
       })
-      .finally(() => this.database.unlock());
+      .finally(() => {
+        if (shouldUnlock) return this.database.unlock();
+        return null;
+      });
   }
 
   getClients() {
+    let shouldUnlock = true;
     return this.database.lock()
       .then(() => this.database.get('clients', {}))
       .then((clients) => Object.values(clients))
-      .finally(() => this.database.unlock());
+      .catch((e) => {
+        if (e.name === 'LockError') {
+          shouldUnlock = false;
+        } else throw e;
+      })
+      .finally(() => {
+        if (shouldUnlock) return this.database.unlock();
+        return null;
+      });
   }
 
   addClient(clientID, socketID) {
+    let shouldUnlock = true;
     return this.database.lock()
       .then(() => this.database.get('clients', {}))
       .then((clients) => {
@@ -207,10 +266,19 @@ export default class Document {
         }
         return new Promise((r) => { r(); });
       })
-      .finally(() => this.database.unlock());
+      .catch((e) => {
+        if (e.name === 'LockError') {
+          shouldUnlock = false;
+        } else throw e;
+      })
+      .finally(() => {
+        if (shouldUnlock) return this.database.unlock();
+        return null;
+      });
   }
 
   cleanUpClientsAndSelections(socketIDs) {
+    let shouldUnlock = true;
     return this.database.lock()
       .then(() => this.database.get('clients', {}))
       .then((clients) => {
@@ -254,7 +322,15 @@ export default class Document {
         }
         return new Promise((r) => { r(); });
       })
-      .finally(() => this.database.unlock());
+      .catch((e) => {
+        if (e.name === 'LockError') {
+          shouldUnlock = false;
+        } else throw e;
+      })
+      .finally(() => {
+        if (shouldUnlock) return this.database.unlock();
+        return null;
+      });
   }
 
   onVersionMismatch(callback) {

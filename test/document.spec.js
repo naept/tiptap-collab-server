@@ -330,6 +330,20 @@ describe('Document', () => {
           done();
         });
     });
+
+    it('should not unlock if lock failed', (done) => {
+      document.database.lock()
+        .then(() => document.initDoc(() => new Promise((resolve) => {
+          resolve({
+            version: 1,
+            doc: docContent,
+          });
+        })))
+        .finally(() => {
+          expect(databaseUnlockSpy.notCalled).to.be.true;
+          done();
+        });
+    });
   });
 
   describe('# getDoc', () => {
@@ -370,6 +384,15 @@ describe('Document', () => {
           done();
         });
     });
+
+    it('should not unlock if lock failed', (done) => {
+      document.database.lock()
+        .then(() => document.getDoc())
+        .finally(() => {
+          expect(databaseUnlockSpy.notCalled).to.be.true;
+          done();
+        });
+    });
   });
 
   describe('# updateDoc', () => {
@@ -390,6 +413,15 @@ describe('Document', () => {
         document.database.lock()
           .then(() => document.updateDoc(updateData))
           .then(() => {
+            done();
+          });
+      });
+
+      it('should not unlock', (done) => {
+        document.database.lock()
+          .then(() => document.updateDoc(updateData))
+          .finally(() => {
+            expect(databaseUnlockSpy.notCalled).to.be.true;
             done();
           });
       });
@@ -823,6 +855,20 @@ describe('Document', () => {
           done();
         });
     });
+
+    it('should not unlock if lock failed', (done) => {
+      document.database.lock()
+        .then(() => document.leaveDoc('socket-a', () => new Promise((resolve) => {
+          resolve({
+            version: 1,
+            doc: docContent,
+          });
+        })))
+        .finally(() => {
+          expect(databaseUnlockSpy.notCalled).to.be.true;
+          done();
+        });
+    });
   });
 
   describe('# getSelections', () => {
@@ -863,6 +909,15 @@ describe('Document', () => {
           done();
         });
     });
+
+    it('should not unlock if lock failed', (done) => {
+      document.database.lock()
+        .then(() => document.getSelections())
+        .finally(() => {
+          expect(databaseUnlockSpy.notCalled).to.be.true;
+          done();
+        });
+    });
   });
 
   describe('# updateSelection', () => {
@@ -885,6 +940,15 @@ describe('Document', () => {
         document.database.lock()
           .then(() => document.updateSelection({ clientID: 'newClient', selection: { from: 1, to: 2 } }, 'newSocket'))
           .then(() => {
+            done();
+          });
+      });
+
+      it('should not unlock', (done) => {
+        document.database.lock()
+          .then(() => document.updateSelection({ clientID: 'newClient', selection: { from: 1, to: 2 } }, 'newSocket'))
+          .finally(() => {
+            expect(databaseUnlockSpy.notCalled).to.be.true;
             done();
           });
       });
@@ -1077,6 +1141,15 @@ describe('Document', () => {
           done();
         });
     });
+
+    it('should not unlock if lock failed', (done) => {
+      document.database.lock()
+        .then(() => document.getClients())
+        .finally(() => {
+          expect(databaseUnlockSpy.notCalled).to.be.true;
+          done();
+        });
+    });
   });
 
   describe('# addClient', () => {
@@ -1136,6 +1209,15 @@ describe('Document', () => {
             done();
           });
       });
+
+      it('should not unlock if lock failed', (done) => {
+        document.database.lock()
+          .then(() => document.addClient('newClient', 'newSocket'))
+          .finally(() => {
+            expect(databaseUnlockSpy.notCalled).to.be.true;
+            done();
+          });
+      });
     });
 
     describe('- if client is already in the list', () => {
@@ -1169,6 +1251,15 @@ describe('Document', () => {
             expect(databaseUnlockSpy.calledAfter(databaseGetStub)).to.be.true;
           })
           .finally(() => {
+            done();
+          });
+      });
+
+      it('should not unlock if lock failed', (done) => {
+        document.database.lock()
+          .then(() => document.addClient('client-1', 'socket-a'))
+          .finally(() => {
+            expect(databaseUnlockSpy.notCalled).to.be.true;
             done();
           });
       });
@@ -1256,6 +1347,15 @@ describe('Document', () => {
           expect(databaseUnlockSpy.calledAfter(databaseStoreSpy)).to.be.true;
         })
         .finally(() => {
+          done();
+        });
+    });
+
+    it('should not unlock if lock failed', (done) => {
+      document.database.lock()
+        .then(() => document.cleanUpClientsAndSelections(['socket-a']))
+        .finally(() => {
+          expect(databaseUnlockSpy.notCalled).to.be.true;
           done();
         });
     });
