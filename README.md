@@ -7,18 +7,6 @@ A socket.io server for [tiptap](https://github.com/ueberdosis/tiptap) collaborat
 [![Coverage Status][coveralls-image]][coveralls-url]
 [![Dev dependencies][david-dm-image]][david-dm-url]
 
-[npm-image]: https://img.shields.io/npm/v/tiptap-collab-server.svg
-[npm-url]: https://npmjs.org/package/tiptap-collab-server
-[travis-image]: https://travis-ci.org/naept/tiptap-collab-server.svg?branch=master
-[travis-url]: https://travis-ci.org/naept/tiptap-collab-server
-[codacy-image]:https://app.codacy.com/project/badge/Grade/65af967d2ca740fd98b7a393674f32c4
-[codacy-url]:https://www.codacy.com/gh/naept/tiptap-collab-server?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=naept/tiptap-collab-server&amp;utm_campaign=Badge_Grade
-[coveralls-image]:https://coveralls.io/repos/github/naept/tiptap-collab-server/badge.svg?branch=master
-[coveralls-url]:https://coveralls.io/github/naept/tiptap-collab-server?branch=master
-[david-dm-image]:https://david-dm.org/naept/tiptap-collab-server.svg
-[david-dm-url]:https://david-dm.org/naept/tiptap-collab-server
-
-
 ## Installation
 ```sh
 npm install tiptap-collab-server
@@ -68,3 +56,14 @@ Compiles and starts example app for development
 npm run serve-example
 ```
 Issues and pull-requests are welcome and will be considered.
+
+[npm-image]: https://img.shields.io/npm/v/tiptap-collab-server.svg
+[npm-url]: https://npmjs.org/package/tiptap-collab-server
+[travis-image]: https://travis-ci.org/naept/tiptap-collab-server.svg?branch=master
+[travis-url]: https://travis-ci.org/naept/tiptap-collab-server
+[codacy-image]:https://app.codacy.com/project/badge/Grade/65af967d2ca740fd98b7a393674f32c4
+[codacy-url]:https://www.codacy.com/gh/naept/tiptap-collab-server?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=naept/tiptap-collab-server&amp;utm_campaign=Badge_Grade
+[coveralls-image]:https://coveralls.io/repos/github/naept/tiptap-collab-server/badge.svg?branch=master
+[coveralls-url]:https://coveralls.io/github/naept/tiptap-collab-server?branch=master
+[david-dm-image]:https://david-dm.org/naept/tiptap-collab-server.svg
+[david-dm-url]:https://david-dm.org/naept/tiptap-collab-server
