@@ -26,7 +26,11 @@ export default class CollabServer {
 
       socket.on('join', ({ roomName, clientID, options }) => {
         this.connectionGuardCallback({
-          namespaceName: namespace.name, roomName, clientID, options,
+          namespaceName: namespace.name,
+          roomName,
+          clientID,
+          requestHeaders: socket.request.headers,
+          options,
         })
           .then(() => {
             socket.join(roomName);
@@ -81,6 +85,7 @@ export default class CollabServer {
                   namespaceName: namespace.name,
                   roomName,
                   clientID,
+                  requestHeaders: socket.request.headers,
                   clientsCount: namespace.adapter.rooms[roomName]
                     ? namespace.adapter.rooms[roomName].length
                     : 0,
@@ -92,6 +97,7 @@ export default class CollabServer {
                   namespaceName: namespace.name,
                   roomName,
                   clientID,
+                  requestHeaders: socket.request.headers,
                   clientsCount: namespace.adapter.rooms[roomName]
                     ? namespace.adapter.rooms[roomName].length
                     : 0,
@@ -106,6 +112,7 @@ export default class CollabServer {
                 namespaceName: namespace.name,
                 roomName,
                 clientID,
+                requestHeaders: socket.request.headers,
                 clientsCount: namespace.adapter.rooms[roomName].length,
               }))
               .then(() => document.addClient(clientID, socket.id))
@@ -114,6 +121,7 @@ export default class CollabServer {
                   namespaceName: namespace.name,
                   roomName,
                   clientID,
+                  requestHeaders: socket.request.headers,
                   clientsCount: namespace.adapter.rooms[roomName].length,
                   version,
                   doc,

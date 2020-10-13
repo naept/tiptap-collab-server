@@ -43,7 +43,9 @@ new CollabServer({
 ```sh
 npm run test
 ```
-Contributions are welcome
+Tests need node v12.x or higher.
+
+Contributions are welcome.
 
 ## Contributing
 Builds library for publication

@@ -8,16 +8,16 @@ new CollabServer({
   lockRetries: 10,
 })
   .connectionGuard(({
-    namespaceName, roomName, clientID, options,
+    namespaceName, roomName, clientID, requestHeaders, options,
   }, resolve) => {
-    console.log('connectionGuard', namespaceName, roomName, clientID, options);
+    console.log('connectionGuard', namespaceName, roomName, clientID, options, requestHeaders);
     resolve();
   })
   .initDocument(({
-    namespaceName, roomName, clientID, clientsCount, version, doc,
+    namespaceName, roomName, clientID, requestHeaders, clientsCount, version, doc,
   }, resolve) => {
     console.log('initDocument', {
-      namespaceName, roomName, clientID, clientsCount, version, doc,
+      namespaceName, roomName, clientID, requestHeaders, clientsCount, version, doc,
     });
     // Load from backend if first user connected
     if (clientsCount === 1 && version === 0) {
@@ -43,10 +43,10 @@ new CollabServer({
     }
   })
   .leaveDocument(({
-    namespaceName, roomName, clientID, clientsCount, version, doc, deleteDatabase,
+    namespaceName, roomName, clientID, requestHeaders, clientsCount, version, doc, deleteDatabase,
   }, resolve) => {
     console.log('leaveDocument', {
-      namespaceName, roomName, clientID, clientsCount, version, doc, deleteDatabase,
+      namespaceName, roomName, clientID, requestHeaders, clientsCount, version, doc, deleteDatabase,
     });
     // Save to backend if last user disconnected
     if (clientsCount === 0) {
@@ -55,15 +55,15 @@ new CollabServer({
     resolve();
   })
   .onClientConnect(({
-    namespaceName, roomName, clientID, clientsCount,
+    namespaceName, roomName, clientID, requestHeaders, clientsCount,
   }, resolve) => {
-    console.log('onClientConnect', namespaceName, roomName, clientID, clientsCount);
+    console.log('onClientConnect', namespaceName, roomName, clientID, requestHeaders, clientsCount);
     resolve();
   })
   .onClientDisconnect(({
-    namespaceName, roomName, clientID, clientsCount,
+    namespaceName, roomName, clientID, requestHeaders, clientsCount,
   }, resolve) => {
-    console.log('onClientDisconnect', namespaceName, roomName, clientID, clientsCount);
+    console.log('onClientDisconnect', namespaceName, roomName, clientID, requestHeaders, clientsCount);
     resolve();
   })
   .serve();
