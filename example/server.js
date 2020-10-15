@@ -10,7 +10,7 @@ new CollabServer({
   .connectionGuard(({
     namespaceName, roomName, clientID, requestHeaders, options,
   }, resolve) => {
-    console.log('connectionGuard', namespaceName, roomName, clientID, options, requestHeaders);
+    console.log('connectionGuard', namespaceName, roomName, clientID, requestHeaders, options);
     resolve();
   })
   .initDocument(({

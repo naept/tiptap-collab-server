@@ -18,21 +18,62 @@ import CollabServer from 'tiptap-collab-server'
 
 new CollabServer({
   port: 6002,
-  namespaceFilter: /^\/[a-zA-Z0-9_/-]+$/
+  namespaceFilter: /^\/[a-zA-Z0-9_/-]+$/,
+  lockDelay: 1000,
+  lockRetries: 10,
 })
-  .beforeConnection(({ socket, room, clientID, options }, resolve, reject) => {
-
+  .connectionGuard(({
+    namespaceName,
+    roomName,
+    clientID,
+    requestHeaders,
+    options,
+  }, resolve) => {
+    
     resolve();
   })
-  .initDocument(({ room, clientID, version, doc }, resolve, reject) => {
-
+  .initDocument(({
+    namespaceName,
+    roomName,
+    clientID,
+    requestHeaders,
+    clientsCount,
+    version,
+    doc,
+  }, resolve) => {
+    
     resolve({ version, doc });
   })
-  .onClientConnect(({ clientID, room, document }, resolve, reject) => {
-
+  .leaveDocument(({
+    namespaceName,
+    roomName,
+    clientID,
+    requestHeaders,
+    clientsCount,
+    version,
+    doc,
+    deleteDatabase,
+  }, resolve) => {
+    
     resolve();
   })
-  .onClientDisconnect(({ clientID, room, document }, resolve, reject) => {
+  .onClientConnect(({
+    namespaceName,
+    roomName, 
+    clientID,
+    requestHeaders,
+    clientsCount,
+  }, resolve) => {
+    
+    resolve();
+  })
+  .onClientDisconnect(({
+    namespaceName,
+    roomName,
+    clientID,
+    requestHeaders,
+    clientsCount,
+  }, resolve) => {
     
     resolve();
   })
