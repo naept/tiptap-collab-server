@@ -25,6 +25,7 @@ export default class CollabServer {
       const namespace = socket.nsp;
 
       socket.on('join', ({ roomName, clientID, options }) => {
+        socket.join(roomName);
         this.connectionGuardCallback({
           namespaceName: namespace.name,
           roomName,
@@ -33,8 +34,6 @@ export default class CollabServer {
           options,
         })
           .then(() => {
-            socket.join(roomName);
-
             const document = new Document(
               namespace.name,
               roomName,

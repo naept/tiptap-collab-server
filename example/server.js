@@ -9,8 +9,14 @@ new CollabServer({
 })
   .connectionGuard(({
     namespaceName, roomName, clientID, requestHeaders, options,
-  }, resolve) => {
+  }, resolve, reject) => {
     console.log('connectionGuard', namespaceName, roomName, clientID, requestHeaders, options);
+    reject();
+  })
+  .onClientConnect(({
+    namespaceName, roomName, clientID, requestHeaders, clientsCount,
+  }, resolve) => {
+    console.log('onClientConnect', namespaceName, roomName, clientID, requestHeaders, clientsCount);
     resolve();
   })
   .initDocument(({
@@ -52,12 +58,6 @@ new CollabServer({
     if (clientsCount === 0) {
       deleteDatabase().then(() => resolve());
     }
-    resolve();
-  })
-  .onClientConnect(({
-    namespaceName, roomName, clientID, requestHeaders, clientsCount,
-  }, resolve) => {
-    console.log('onClientConnect', namespaceName, roomName, clientID, requestHeaders, clientsCount);
     resolve();
   })
   .onClientDisconnect(({
