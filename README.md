@@ -32,6 +32,16 @@ new CollabServer({
     
     resolve();
   })
+  .onClientConnect(({
+    namespaceName,
+    roomName, 
+    clientID,
+    requestHeaders,
+    clientsCount,
+  }, resolve) => {
+    
+    resolve();
+  })
   .initDocument(({
     namespaceName,
     roomName,
@@ -53,16 +63,6 @@ new CollabServer({
     version,
     doc,
     deleteDatabase,
-  }, resolve) => {
-    
-    resolve();
-  })
-  .onClientConnect(({
-    namespaceName,
-    roomName, 
-    clientID,
-    requestHeaders,
-    clientsCount,
   }, resolve) => {
     
     resolve();
