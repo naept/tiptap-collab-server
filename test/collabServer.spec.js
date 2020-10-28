@@ -146,8 +146,11 @@ describe('CollabServer', () => {
     client = io('http://localhost:6000/some-namespace');
   });
 
-  afterEach(() => {
+  afterEach((done) => {
     client && client.connected && client.disconnect();
+    setTimeout(() => {
+      done();
+    }, 500);
   });
 
   describe('# receive init', () => {
