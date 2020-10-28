@@ -188,8 +188,8 @@ describe('CollabServer', () => {
         // This event will be send again on disconnect
         client.on('getClients', (clients) => {
           expect(clients).to.be.eql(['client']);
-          done();
           client.on('getClients', () => {}); // restore
+          done();
         });
 
         client.emit('join', {
@@ -274,8 +274,8 @@ describe('CollabServer', () => {
         it('should emit getSelections with selections', (done) => {
           client.on('getSelections', (selections) => {
             expect(selections).to.be.eql([]);
-            done();
             client.on('getSelections', () => {}); // restore
+            done();
           });
 
           client.emit('join', {
