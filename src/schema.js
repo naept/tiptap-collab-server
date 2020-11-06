@@ -240,6 +240,12 @@ const schema = {
       ],
     },
     link: {
+      attrs: {
+        href: {},
+      },
+      draggable: true,
+      group: 'inline',
+      inline: true,
       parseDOM: [
         {
           tag: 'a[href]',

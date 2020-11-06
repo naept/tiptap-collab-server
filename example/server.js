@@ -1,5 +1,5 @@
-import CollabServer from 'tiptap-collab-server';
-// import CollabServer from '../src/collabServer';
+// import CollabServer from 'tiptap-collab-server';
+import CollabServer from '../src/collabServer';
 
 new CollabServer({
   port: 6002,
@@ -9,9 +9,9 @@ new CollabServer({
 })
   .connectionGuard(({
     namespaceName, roomName, clientID, requestHeaders, options,
-  }, resolve, reject) => {
+  }, resolve) => {
     console.log('connectionGuard', namespaceName, roomName, clientID, requestHeaders, options);
-    reject();
+    resolve();
   })
   .onClientConnect(({
     namespaceName, roomName, clientID, requestHeaders, clientsCount,

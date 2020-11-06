@@ -39,7 +39,7 @@ export default class Document {
       })
       .then(() => returnData)
       .catch((e) => {
-        if (e.name === 'LockError') {
+        if (e && e.name === 'LockError') {
           shouldUnlock = false;
         } else throw e;
       })
@@ -54,7 +54,7 @@ export default class Document {
     return this.database.lock()
       .then(() => this.database.get('doc', defaultData))
       .catch((e) => {
-        if (e.name === 'LockError') {
+        if (e && e.name === 'LockError') {
           shouldUnlock = false;
         } else throw e;
       })
@@ -110,13 +110,13 @@ export default class Document {
         });
       })
       .catch((e) => {
-        if (e.name === 'VersionMismatchError') {
+        if (e && e.name === 'VersionMismatchError') {
           this.onVersionMismatchCallback({
             version,
             steps: currentSteps.filter((step) => step.version > version),
           });
         } else
-        if (e.name === 'LockError') {
+        if (e && e.name === 'LockError') {
           shouldUnlock = false;
         } else throw e;
       })
@@ -174,7 +174,7 @@ export default class Document {
       })
       .then(() => returnData)
       .catch((e) => {
-        if (e.name === 'LockError') {
+        if (e && e.name === 'LockError') {
           shouldUnlock = false;
         } else throw e;
       })
@@ -190,7 +190,7 @@ export default class Document {
       .then(() => this.database.get('sel', {}))
       .then((selections) => Object.values(selections))
       .catch((e) => {
-        if (e.name === 'LockError') {
+        if (e && e.name === 'LockError') {
           shouldUnlock = false;
         } else throw e;
       })
@@ -222,7 +222,7 @@ export default class Document {
         return new Promise((r) => { r(); });
       })
       .catch((e) => {
-        if (e.name === 'LockError') {
+        if (e && e.name === 'LockError') {
           shouldUnlock = false;
         } else throw e;
       })
@@ -238,7 +238,7 @@ export default class Document {
       .then(() => this.database.get('clients', {}))
       .then((clients) => Object.values(clients))
       .catch((e) => {
-        if (e.name === 'LockError') {
+        if (e && e.name === 'LockError') {
           shouldUnlock = false;
         } else throw e;
       })
@@ -267,7 +267,7 @@ export default class Document {
         return new Promise((r) => { r(); });
       })
       .catch((e) => {
-        if (e.name === 'LockError') {
+        if (e && e.name === 'LockError') {
           shouldUnlock = false;
         } else throw e;
       })
@@ -323,7 +323,7 @@ export default class Document {
         return new Promise((r) => { r(); });
       })
       .catch((e) => {
-        if (e.name === 'LockError') {
+        if (e && e.name === 'LockError') {
           shouldUnlock = false;
         } else throw e;
       })
